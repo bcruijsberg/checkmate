@@ -1,0 +1,21 @@
+# env files
+.env
+
+# virtual environments
+.venv/
+
+# your folders to ignore (add/remove as needed)
+faiss_index/
+Data/Dataset Socrates/
+logging.txt
+Fact-check_chatbot.ipynb
+Fact-check_chatbot2.ipynb
+Fact-check_chatbot3.ipynb
+Fact-check_chatbot4.ipynb
+Fact-check_chatbot5.ipynb
+
+# editor/OS noise
+.vscode/
+.DS_Store
+Thumbs.db
+desktop.ini

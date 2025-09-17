@@ -1,0 +1,3 @@
+# CheckMate
+
+The study focuses on developing and evaluating an AI assistant: **CheckMate**, that supports journalism students with fact-checking, while also serving as an educational tool to raise awareness about the responsible use of AI technologies, such as large language models (LLMs). The aim is to explore to what extent such an assistant can add value within education, both practically and didactically. 
