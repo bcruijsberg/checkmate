@@ -1,0 +1,1 @@
+"""Fact-checking assistant for journalism students."""
