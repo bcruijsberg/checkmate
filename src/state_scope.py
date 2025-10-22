@@ -12,6 +12,7 @@ from langgraph.graph import MessagesState
 from langgraph.graph.message import add_messages
 from pydantic import BaseModel, Field
 
+# Input state for the full agent
 class AgentInputState(MessagesState):
     """Input state for the full agent - only contains messages from user input."""
     pass
@@ -45,3 +46,8 @@ class MoreInfoResult(BaseModel):
     explanation: str
     question: str = Field("", description="Question to user for clarification if needed")
     alerts: List[str] = Field([], description="Any alerts or warnings about the claim")
+
+class ConfirmationResult(BaseModel):
+    claim: str
+    explanation: str
+    question: str = Field("", description="Question to user for verification")
