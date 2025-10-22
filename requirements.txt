@@ -11,7 +11,7 @@ python-dotenv
 langchain-groq==0.3.2
 langchain==0.3.25
 langchain_ollama==0.3.8
-langgraph==0.4.8
+langgraph==0.5.3
 tqdm==4.67.1
 langchain-community==0.3.24
 transformers==4.57.1
