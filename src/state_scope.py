@@ -33,14 +33,12 @@ class AgentState(TypedDict):
     
 #output models for structured output
 class SubjectResult(BaseModel):
-    subject: str = Field("", description="Main subject of the claim, if identifiable")
     checkable: Literal["POTENTIALLY CHECKABLE", "UNCHECKABLE"]
     explanation: str
-    question: str = Field("", description="Question to user for clarification if needed")
-    alerts: List[str] = Field([], description="Any alerts or warnings about the claim")
-
+    question: str = Field("", description="Question to user for confirmation")
 
 class MoreInfoResult(BaseModel):
+    subject: str
     quantitative: bool
     precision: str = Field("", description="How precise is it?")
     based_on: str = Field("", description="how was the data collected or derived?")
