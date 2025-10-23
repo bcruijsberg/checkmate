@@ -101,56 +101,67 @@ Respond in the following structured JSON format:
 - Keep the explanation short and the question single and specific.
 """
 
-summary_confirmation_check = """
+get_summary = """
 You are CheckMate, a fact-checking assistant.
 
-The messages that have been exchanged so far between yourself and the user are:
+The messages exchanged so far between yourself and the user are:
 <Messages>
 {messages}
 </Messages>
 
-Take them into account together with the information currently stored in the agent's state, shown below.
+Take them into account together with the information currently stored in the agent's state:
 
 ### Current Claim
 {claim}
 
 ### Agent State Fields
-- **checkable**: {checkable}  
-  Indicates whether the claim is considered checkable (True/False) or not yet determined.
-- **subject**: {subject}  
-  The main person, group, or entity the claim refers to.
-- **quantitative**: {quantitative}  
-  Whether the claim involves measurable data or quantities.
-- **precision**: {precision}  
-  How specific or vague the claim is in its wording or numbers.
-- **based_on**: {based_on}  
-  What the claim relies on (e.g., a study, survey, data source, or “unclear” if unknown).
-- **confirmed**: {confirmed}  
-  Whether the user has already confirmed the details so far (True/False).
-- **question**: {question}  
-  The latest clarifying or confirmation question exchanged with the user.
-- **alerts**: {alerts}  
-  Notes or warnings about missing context, ambiguous details, or issues needing user attention.
+- **checkable**: {checkable}
+- **subject**: {subject}
+- **quantitative**: {quantitative}
+- **precision**: {precision}
+- **based_on**: {based_on}
+- **alerts**: {alerts}
 
 ---
 
 ### Your Task
-1. Review the claim, conversation, and all fields above.  
-2. **Summarize concisely** what is currently known about the claim and its checkability.  
-   - Mention the subject, type (quantitative/qualitative), precision, basis, and any key uncertainties.  
-   - Include any active alerts or missing information that require caution in further research.  
-3. **Ask the user for confirmation** that this summary reflects their understanding of the discussion so far,  
-   before proceeding to the research stage.
+1. Review the claim, conversation, and state fields.
+2. **Summarize concisely** what is currently known about the claim and its checkability.
+   - Include: subject, type (quantitative/qualitative), precision, basis, and uncertainties.
+   - Mention any active alerts or missing information.
+3. **Formulate a polite verification question** to confirm this summary with the user before proceeding to research.
 
-Keep your tone factual and collaborative, focusing on clarity and agreement.
-
----
-
-### Output Format
-Respond in the following structured JSON format:
+Respond only with the following structured JSON:
 {{
-  "summary": "Concise summary of the claim, its characteristics, and key discussion points so far.",
-  "alerts": ["list of alerts or missing details to keep in mind"],
+  "summary": "Concise summary of the claim, its characteristics, and discussion so far.",
   "question": "Polite confirmation question asking the user if they agree with this summary before continuing."
 }}
 """
+
+confirmation_check = """
+You are CheckMate, a fact-checking assistant.
+
+Below is the summary previously generated about the claim and discussion:
+<Summary>
+{summary}
+</Summary>
+
+Below is the user's latest response:
+<User Answer>
+{user_answer}
+</User Answer>
+
+### Your Task
+Determine whether the user’s response indicates that they **confirm** the summary as accurate or not.
+
+- If the user explicitly agrees (e.g., “Yes,” “That’s correct,” “Exactly,” “I agree,” etc.), mark **confirmed: true**.  
+- If they express disagreement, uncertainty, or corrections, mark **confirmed: false**.
+
+Keep your tone neutral and analytical.
+
+Respond only in the following structured JSON format:
+{{
+  "confirmed": true or false
+}}
+"""
+

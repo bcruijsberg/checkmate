@@ -29,6 +29,7 @@ class AgentState(TypedDict):
     confirmed: bool
     question: Optional[str]
     alerts: List[str]
+    summary: Optional[str]
     
 #output models for structured output
 class SubjectResult(BaseModel):
@@ -47,7 +48,9 @@ class MoreInfoResult(BaseModel):
     question: str = Field("", description="Question to user for clarification if needed")
     alerts: List[str] = Field([], description="Any alerts or warnings about the claim")
 
-class ConfirmationResult(BaseModel):
-    claim: str
-    explanation: str
+class SummaryResult(BaseModel):
+    summary: str
     question: str = Field("", description="Question to user for verification")
+
+class ConfirmationResult(BaseModel):
+    confirmed: bool = Field(False, description="Whether the user confirmed the claim as checkable")
