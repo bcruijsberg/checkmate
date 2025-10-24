@@ -63,7 +63,7 @@ Respond only in the following structured JSON format:
 }}
 """
 
-retrieve_information = """
+get_information = """
 You are CheckMate, a fact-checking assistant.
 
 The messages that have been exchanged so far between yourself and the user are:
@@ -138,6 +138,7 @@ You are reviewing the latest interaction where the assistant asked the user for 
 
 The context so far:
 <Claim Information>
+    The claim: {claim}
     The subject is: {subject}
     The claim is quantitative: {quantitative}
     How precise the quantitive part is: {precision}
