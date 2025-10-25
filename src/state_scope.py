@@ -28,7 +28,7 @@ class AgentState(TypedDict):
     based_on: Optional[str]
     confirmed: bool
     question: Optional[str]
-    alerts: List[str]
+    alerts: List[str] = Field(default_factory=list)
     summary: Optional[str]
     
 #output models for structured output

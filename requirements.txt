@@ -1,13 +1,10 @@
-# Use PyTorch CUDA 12.4 build (GPU)
---index-url https://download.pytorch.org/whl/cu124
-
-# Pin torch first so other deps don't upgrade it
-torch==2.4.1
-torchvision==0.19.1
-torchaudio==2.4.1
+#Installing torch depends on your specific CUDA version and system configuration.
+--index-url https://download.pytorch.org/whl/cu126
+torch==2.9.0+cu126
+torchvision==0.24.0+cu126
 
 # Rest of your stack
-python-dotenv
+python-dotenv==1.1.1
 langchain-groq==0.3.2
 langchain==0.3.25
 langchain_ollama==0.3.8

@@ -76,59 +76,50 @@ Take them into account when evaluating the claim below, and respond accordingly.
 {claim}
 
 This part focuses on determining whether the subject is clear, the claim is quantitative, how precise it is, how the data was derived, and what additional details are present or missing.
+You don't need to acquire all missing details right now; just identify what is missing and formulate one clarifying question. If the user says no more details are available, proceed with what you have.
 
 ### Steps
-1. **Identify the subject of the claim.**
-   - If the claim clearly specifies a person, group, location, event, or phenomenon → set the `subject` field accordingly.
-   - If the subject is vague or missing → set `subject` to "unclear".
-   
-2. **Determine if the claim is quantitative or qualitative.**
-   - Quantitative → contains numbers, measurable quantities, or comparative terms implying measurement (e.g. “more than”, “as much as”).
-   - Qualitative → expresses an assessment or description without measurable quantities.
-   - Set the field `quantitative` to `true` or `false` accordingly.
+1) Identify the subject. If unclear → "unclear".
+2) Determine if the claim is quantitative. Set `quantitative` to true/false.
+3) Assess precision: "precise", "vague", or "absolute (100%)". If qualitative, use "".
+4) Identify what the claim is based on (e.g., "survey …", "official statistics"). If none → "unclear".
+5) Briefly explain your reasoning (quote/phrase from the claim).
+6) Ask exactly one clarifying/confirmation question that would make the claim checkable.
+7) Identify alerts/warnings: unclear subject, qualitative claim, vague quantitative claim, geography missing, time period missing, methodological details absent.
 
-3. **Assess precision.**
-   - If the claim includes exact numbers, percentages, or clearly bounded quantities → "precise".
-   - If it uses vague terms like “many”, “a lot”, “more than”, “less than” → "vague".
-   - If it implies universality (e.g., “all”, “none”, “everyone”) → "absolute (100%)".
-   - If it is qualitative → leave precision as an empty string.
-
-4. **Identify what the claim is based on.**
-   - Look for explicit references such as *survey*, *study*, *academic research*, *official statistics*, or *data source*.
-   - If a survey is mentioned, ask the user if any details are available:
-     - Sample size (e.g., “n=1000”)
-     - Sampling method (e.g., “online poll”, “random sample”)
-     - Margin of error (e.g., “±3%”)
-   - If geography or time period are mentioned, append them to this field.
-   - If no basis is given, set it to "unclear".
-
-5. **Explain your reasoning.**
-   - Briefly justify your interpretation using quotes or phrases directly from the claim.
-   - Keep it concise and objective.
-
-6. **Formulate a clarification or confirmation question.**
-   - If important context is lacking — such as unclarity on what the subject is, missing data source, survey methodology, sample size, time period, or geography — 
-     ask one neutral question that would help make the claim checkable.
-   - If the user has already provided some details, ask the user to confirm to continue with this information.
-
-7. **Identify any alerts or warnings.**
-   - Add alerts for an unclear subject, a qualitative claim, a quantative vague claim, geoggraphy missing if relevant, time period missing if relevant,
-     or important methodological details absent.
-Respond in the following structured JSON format:
+### Output format (VALID JSON ONLY, no markdown):
 {{
   "subject": "subject text" or "unclear",
   "quantitative": true or false,
   "precision": "precise" or "vague" or "absolute (100%)" or "",
-  "based_on": "survey [n=1000; online poll; MOE ±3%] | geography: UK | period: 2024" or "official statistics" or "unclear",
+  "based_on": "..." or "unclear",
   "explanation": "short justification quoting the claim text",
-  "question": "one clarifying or confirmation question"
-  "alerts": "unclear subject, a qualitative claim, a quantative vague claim, geoggraphy missing, time period missing, methodological details absent."
+  "question": "one clarifying or confirmation question",
+  "alerts": ["each alert as a short string; [] if none"]
 }}
 
-### Notes
-- Do **not** invent details that aren’t in the claim.
-- Stay neutral and evidence-focused.
-- Keep the explanation short and the question single and specific.
+### Examples
+Example A (qualitative):
+{{
+  "subject": "Spanish court sentencing of Catalan leaders (2019)",
+  "quantitative": false,
+  "precision": "",
+  "based_on": "news reporting | geography: Spain | period: 2019",
+  "explanation": "‘sentenced … in 2019’ is descriptive, not numeric.",
+  "question": "Are you referring to the 2019 Supreme Court ruling in Spain?",
+  "alerts": ["qualitative claim", "methodological details absent", "geography present", "time period present"]
+}}
+
+Example B (quantitative but vague):
+{{
+  "subject": "EU asylum applications",
+  "quantitative": true,
+  "precision": "vague",
+  "based_on": "unclear",
+  "explanation": "Uses ‘more than’ without a number or source.",
+  "question": "Which time period and which EU source should I use (Eurostat year/month)?",
+  "alerts": ["vague quantitative claim", "time period missing", "source/methodology missing", "geography: EU (present)"]
+}}
 """
 
 confirmation_clarification = """
@@ -165,7 +156,7 @@ Below is the user’s latest reply:
 ### Your Task
 Determine whether the user’s response **confirms** the information as correct or final, or if it suggests **further clarification is needed**.
 
-- If the user explicitly agrees, confirms, or says everything is correct (e.g., “Yes,” “That’s right,” “Correct,” “Exactly,” “I agree,” etc.), mark **confirmed: true**.
+- If the user explicitly agrees, confirms, or says everything is correct (e.g., "Yes," "That’s right," "Correct," "Exactly," "I agree," etc.), mark **confirmed: true**.
 - If the user corrects details, adds new information, expresses uncertainty, or asks a new question, mark **confirmed: false**.
 
 Keep your tone neutral and analytical.
