@@ -30,6 +30,9 @@ class AgentState(TypedDict):
     question: Optional[str]
     alerts: List[str] = Field(default_factory=list)
     summary: Optional[str]
+    claim_author: Optional[str]
+    claim_source: Optional[str]
+    primary_source: Optional[str]
     
 #output models for structured output
 class SubjectResult(BaseModel):
