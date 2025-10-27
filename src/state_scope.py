@@ -55,3 +55,13 @@ class SummaryResult(BaseModel):
 
 class ConfirmationResult(BaseModel):
     confirmed: bool = Field(False, description="Whether the user confirmed the claim as checkable")
+
+class ConfirmationFinalResult(BaseModel):
+    confirmed: bool = Field(False, description="Whether the user confirmed the claim as checkable")
+    subject: str
+    quantitative: bool
+    precision: str = Field("", description="How precise is it?")
+    based_on: str = Field("", description="how was the data collected or derived?")
+    explanation: str
+    question: str = Field("", description="Question to user for clarification if needed")
+    alerts: List[str] = Field([], description="Any alerts or warnings about the claim")

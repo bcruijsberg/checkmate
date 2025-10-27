@@ -269,36 +269,22 @@ The context so far:
 
 ### Steps
 1. Before searching, extract from the Summary + Claim Information the following facets (use None if missing):
-  - **Proposition** (core assertion),
+  - **Subject** (What is being claimed),
   - **Entities** (people/orgs/policies/objects),
   - **Geography** (country/region/locality),
   - **Timeframe** (date/period; resolve relative time if possible),
-  - **Mechanism/Modality/Relation** (how/why; e.g., “via X”, “causes Y”),
-  - **Quantities** (numbers, shares, rates, units; normalize synonyms like “one third” ≈ 33%),
-  - **Topic domain** (e.g., health, migration, elections, crime, economy, climate, tech).
+   -**Quantities** (numbers, shares, rates, units; normalize synonyms like “one third” ≈ 33%),
 
-2. Create 6–12 short queries that combine these facets. Prioritize **binding** (at least 3 facets together per query), e.g.:
-  - entity + geography + quantity,
-  - entity + mechanism + timeframe,
-  - topic + geography + key noun/verb of the proposition.
- Include common synonyms, abbreviations, and numeric variants (e.g., “one third”, “a third”, “1 in 3”, 33%).
-
-3. Call **retriever_tool** in small batches (2–3 queries per batch). After each batch:
-  - Discard candidates that are **off-topic** relative to the extracted **topic domain**.
-  - Keep only candidates whose **core proposition** overlaps strongly with the new claim. Require overlap on **≥ 3 of 4**: (entities, geography, mechanism/relation, timeframe/quantity). Mere keyword overlap is insufficient.
-  - If results are noisy, tighten queries by explicitly binding **entities + geography + proposition verb/noun** and (if present) **quantity/timeframe**. 
+2. Call **retriever_tool** in small batches (2–3 queries per batch). After each batch:
+  - Discard candidates that are **off-topic** relative to the extracted **subject*.
+  - Keep only candidates whose **subject** overlaps strongly with the new claim. Require overlap on at least **3**: (entities, geography, timeframe or quantity).
   - Use retrieved CONTEXT and ALLOWED_URLS to decide if you need more queries.
+  - Stop calling tools once you have enough on-topic candidates (up to ~10 raw). 
 
-4. Normalize numeric and temporal expressions for matching:
+3. Normalize numeric and temporal expressions for matching:
   - Map verbal to numeric (e.g., “one-third” ↔ 33%), allow a small tolerance (±10%) for **near** matches unless the exact figure is central.
   - Handle unit conversions if needed.
   - Treat paraphrases as equivalent if the **proposition** is unchanged.
 
-Stop calling tools once you have enough on-topic candidates (up to ~10 raw). Then re-rank by:
-  - Facet alignment (entities, geography, mechanism, quantity/timeframe),
-  - Clarity of verdict/source,
-  - **Recency** when time-sensitive.
-
 - Finalize: return the **top ≤5** most relevant existing claims with a one-sentence rationale that references which facets align/differ.
 """
-
