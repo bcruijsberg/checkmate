@@ -102,8 +102,7 @@ Respond in the following structured JSON format:
   "subject": "subject text" or "unclear",
   "quantitative": true or false,
   "precision": "precise" or "vague" or "absolute (100%)" or "",
-  "based_on": "..." or "unclear",
-  "explanation": "short justification quoting the claim text",
+  "based_on": "methodology" or "unclear",
   "question": "one clarifying or confirmation question",
   "alerts": ["each alert as a short string; [] if none"]
 }}
@@ -115,7 +114,6 @@ Example A (qualitative):
   "quantitative": false,
   "precision": "",
   "based_on": "news reporting | geography: Spain | period: 2019",
-  "explanation": "‘sentenced … in 2019’ is descriptive, not numeric.",
   "question": "Are you referring to the 2019 Supreme Court ruling in Spain?",
   "alerts": ["qualitative claim", "methodological details absent", "geography present", "time period present"]
 }}
@@ -126,7 +124,6 @@ Example B (quantitative but vague):
   "quantitative": true,
   "precision": "vague",
   "based_on": "unclear",
-  "explanation": "Uses ‘more than’ without a number or source.",
   "question": "Which time period and which EU source should I use (Eurostat year/month)?",
   "alerts": ["vague quantitative claim", "time period missing", "source/methodology missing", "geography: EU (present)"]
 }}
@@ -143,7 +140,6 @@ The context so far:
     The claim is quantitative: {quantitative}
     How precise the quantitive part is: {precision}
     The methodology used: {based_on}
-    Short justification: {explanation}
     any alerts: {alerts}
 </Claim Information>
 
@@ -195,7 +191,6 @@ The messages exchanged so far between yourself and the user are:
 
 The context so far:
 <Claim Information>
-- **checkable**: {checkable}
 - **subject**: {subject}
 - **quantitative**: {quantitative}
 - **precision**: {precision}
@@ -216,7 +211,12 @@ Keep your tone neutral and analytical.
 Respond in the following structured JSON format:
 {{
   "summary": "Concise summary of the claim, its characteristics, and discussion so far.",
-  "question": "Polite confirmation question asking the user if they agree with this summary before continuing."
+  "subject": "subject text" or "unclear",
+  "quantitative": true or false,
+  "precision": "precise" or "vague" or "absolute (100%)" or "",
+  "based_on": "methodology" or "unclear",
+  "question": "one clarifying or confirmation question",
+  "alerts": ["each alert as a short string; [] if none"]
 }}
 """
 
@@ -246,6 +246,13 @@ Keep your tone neutral and analytical.
 Respond in the following structured JSON format:
 {{
   "confirmed": true or false
+  "summary": "Concise summary of the claim, its characteristics, and discussion so far.",
+  "subject": "subject text" or "unclear",
+  "quantitative": true or false,
+  "precision": "precise" or "vague" or "absolute (100%)" or "",
+  "based_on": "methodology" or "unclear",
+  "question": "one clarifying or confirmation question",
+  "alerts": ["each alert as a short string; [] if none"]
 }}
 """
 
