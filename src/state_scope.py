@@ -36,16 +36,15 @@ class AgentStateSource(TypedDict):
     claim: str 
     checkable: Optional[bool]
     subject: Optional[str]
-    quantitative: Optional[bool]
-    precision: Optional[str]
-    based_on: Optional[str]
     confirmed: bool
     question: Optional[str]
     alerts: List[str] = Field(default_factory=list)
     summary: Optional[str]
-    claim_author: Optional[str]
+    claim_url: Optional[str]
     claim_source: Optional[str]
-    primary_source: Optional[str]
+    primary_source: Optional[bool]
+    match: Optional[bool]
+    explanation: Optional[str]
     
 
 #output models for structured output
@@ -83,3 +82,11 @@ class ConfirmationFinalResult(BaseModel):
     based_on: str = Field("", description="how was the data collected or derived?")
     question: str = Field("", description="Question to user for clarification if needed")
     alerts: List[str] = Field([], description="Any alerts or warnings about the claim")
+
+class ConfirmationMatch(BaseModel):
+    match: bool = Field(False, description="Whether the user confirmed their was a matching claim")
+    explanation: str = Field("", description="Explanation of the matching")
+
+class GetSource(BaseModel):
+    claim_source: str = Field("", description="What is the source of this claim?")
+    claim_url: str = Field("", description = "What is the url of this claim?")

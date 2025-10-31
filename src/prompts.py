@@ -261,18 +261,17 @@ retrieve_claims= """
 You are CheckMate, a fact-checking assistant, in this part you will retrieve possible matching existing claims from the Faiss database
  to the claim presented in the **summary and context** below
 
+The messages exchanged so far between yourself and the user are:
+<Messages>
+{messages}
+</Messages> 
+
 Below is the summary previously generated about the claim and discussion:
 <Summary>
 {summary}
 </Summary>
 
-The context so far:
-<Claim Information>
-- **subject**: {subject}
-- **quantitative**: {quantitative}
-- **precision**: {precision}
-- **based_on**: {based_on}
-</Claim Information>
+**subject**: {subject}
 
 ### Steps
 1. Before searching, extract from the Summary + Claim Information the following facets (use None if missing):
@@ -282,7 +281,7 @@ The context so far:
   - **Timeframe** (date/period; resolve relative time if possible),
    -**Quantities** (numbers, shares, rates, units; normalize synonyms like “one third” ≈ 33%),
 
-2. Call **retriever_tool** in small batches (2–3 queries per batch). After each batch:
+2. Call **retriever_tool** with focused queries in small batches (2–3 queries per batch). After each batch:
   - Discard candidates that are **off-topic** relative to the extracted **subject*.
   - Keep only candidates whose **subject** overlaps strongly with the new claim. Require overlap on at least **3**: (entities, geography, timeframe or quantity).
   - Use retrieved CONTEXT and ALLOWED_URLS to decide if you need more queries.
@@ -294,4 +293,69 @@ The context so far:
   - Treat paraphrases as equivalent if the **proposition** is unchanged.
 
 - Finalize: return the **top ≤5** most relevant existing claims with a one-sentence rationale that references which facets align/differ.
+"""
+
+# Check if a matching claim has been found based on the user's answer
+match_check = """
+You are CheckMate, a fact-checking assistant. Your task in this step is to determine whether the user believes a matching claim has been found.
+
+Use ONLY the evidence already retrieved in this conversation (the CONTEXT and ALLOWED_URLS from prior tool calls). 
+Do NOT call any tools or retrieve new information.
+
+### Conversation History
+<Messages>
+{messages}
+</Messages>
+
+### User’s Latest Response
+<User Answer>
+{user_answer}
+</User Answer>
+
+
+### Task
+Analyze the user’s response and decide whether it indicates that a **matching claim** has been found.
+
+- If the user indicates that **no match** was found or wants to **continue researching** (e.g., “None,” “Keep searching,” “No match,” “Continue”), set `"match": false`.
+- If the user suggests that a claim **does match** their original statement (e.g., “Yes, that’s the one,” “That matches,” “Found it”), set `"match": true`.
+- If the message is ambiguous, infer the most likely intent from context.
+
+Maintain a neutral and analytical tone.
+
+### Output Format
+Respond in **strict JSON**:
+{{
+  "match": true or false,
+  "explanation": "A concise, factual explanation of your reasoning"
+}}
+"""
+
+#retrieve the source from the user
+identify_source = """
+You are CheckMate, a fact-checking assistant. Your task in this step is to identify the source information of the claim based on the user’s latest response.
+
+### Conversation History
+<Messages>
+{messages}
+</Messages>
+
+### User’s Latest Response
+<User Answer>
+{user_answer}
+</User Answer>
+
+### Task
+Extract from the user’s answer any details about:
+1. **The source** of the claim — this publication, platform, or type of medium (e.g., article, video, social media post). Also provide the **Author** if provide by the user. 
+2. **The url** of the claim — if the user provide a url to the source of the claim.
+If the user provides only one of these (e.g., just the URL or only the author), fill in what is available and leave the missing field as an empty string `""`.
+
+Keep your tone objective and concise.
+
+### Output Format
+Respond in **strict JSON** matching the schema below:
+{{
+  "claim_source": "string — what is the source/ medium (e.g., URL, platform, publication, etc.) and author of this claim ?",
+  "claim_url": "string — what is the url of the source of the claim"
+}}
 """
