@@ -1,23 +1,14 @@
 
-"""State Definitions and Pydantic Schemas for CheckMate.
+""" State Definitions and Pydantic Schemas for testing if a claim is checkable. """
 
-This defines the state objects and structured schemas used for
-the CheckMate scoping workflow, states and output schemas.
-"""
-
-import operator
-from typing_extensions import Optional, Annotated, Sequence, List, Literal,TypedDict
+from typing_extensions import TypedDict, Annotated, Sequence, Literal, List, Optional
 from langchain_core.messages import BaseMessage
-from langgraph.graph import MessagesState
-from langgraph.graph.message import add_messages
+from langchain_core.output_parsers import PydanticOutputParser
 from pydantic import BaseModel, Field
+from operator import add as add_messages
+from langgraph.graph.message import MessagesState
 
-# # Input state for the full agent
-# class AgentInputState(MessagesState):
-#     """Input state for the full agent - only contains messages from user input."""
-#     pass
 
-# Create an object to hold the state of the agent
 class AgentStateClaim(TypedDict):
     messages: Annotated[Sequence[BaseMessage], add_messages]
     claim: str 
@@ -48,7 +39,7 @@ class AgentStateSource(TypedDict):
     primary_source: Optional[bool]
     match: Optional[bool]
     explanation: Optional[str]
-    
+
 
 #output models for structured output
 class SubjectResult(BaseModel):

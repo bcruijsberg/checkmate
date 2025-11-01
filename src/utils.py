@@ -1,8 +1,11 @@
 from newspaper import Article
+from typing_extensions import List, Optional
+from langchain_core.messages import BaseMessage
+from langchain_core.messages import HumanMessage
 
-# ──────────────────────────────
+# ────────────────────────────────────────────────────────────
 # HELPER FUNCTION TO FETCH FULL ARTICLE CONTENT
-# ──────────────────────────────
+# ────────────────────────────────────────────────────────────
 def fetch_full_article(url) -> tuple[str, bool]:
     """
     Fetch and return the full text of an article from a given URL.
@@ -18,9 +21,9 @@ def fetch_full_article(url) -> tuple[str, bool]:
 #set a limit to the number of characters from the full article
 max_chars = 1200
 
-# ──────────────────────────────
+# ───────────────────────────────────────────────────────────────────────────────
 # HELPER FUNCTION TO COMBINE SUMMARY AND FULL ARTICLE CONTENT, AND SEPERATE URLS
-# ──────────────────────────────
+# ───────────────────────────────────────────────────────────────────────────────
 def format_docs(docs) -> str:
     """
     Format the found documents to format
@@ -46,3 +49,13 @@ def format_docs(docs) -> str:
         else:
             formatted.append(f"this url: {url} does not exist, don't use it in your answer")
     return "\n\n---\n\n".join(formatted)
+
+# ────────────────────────────────────────────────────────────
+# HELPER FUNCTION TO TAKE INPUT FROM USER
+# ────────────────────────────────────────────────────────────
+
+def get_last_user_message(messages: List[BaseMessage]) -> Optional[str]:
+    for m in reversed(messages):
+        if isinstance(m, HumanMessage):
+            return m.content
+    return None

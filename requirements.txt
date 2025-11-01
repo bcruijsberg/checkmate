@@ -21,3 +21,4 @@ newspaper3k==0.2.8
 pandas==2.3.3
 lxml_html_clean==0.4.3
 tavily==1.1.0
+streamlit==1.51.0
