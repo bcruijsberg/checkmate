@@ -37,7 +37,10 @@ class AgentStateSource(TypedDict):
     checkable: Optional[bool]
     subject: Optional[str]
     confirmed: bool
-    question: Optional[str]
+    search_queries:  List[str] = Field(default_factory=list)
+    tavily_context: Optional[str]
+    research_focus: Optional[str]
+    research_results: List[str] = Field(default_factory=list)
     alerts: List[str] = Field(default_factory=list)
     summary: Optional[str]
     claim_url: Optional[str]
@@ -90,3 +93,18 @@ class ConfirmationMatch(BaseModel):
 class GetSource(BaseModel):
     claim_source: str = Field("", description="What is the source of this claim?")
     claim_url: str = Field("", description = "What is the url of this claim?")
+
+class PrimarySourcePlan(BaseModel):
+    claim_source: str = Field("", description="Best current source for the claim (URL, site, platform, etc.)")
+    primary_source: bool = Field(False, description="True if the user already provided the original/official source")
+    search_queries: List[str] = Field(default_factory=list, description="Ordered list of queries to run in Tavily to find the primary source")
+
+class PrimarySourceSelection(BaseModel):
+    primary_source: bool = Field(..., description="True if a credible/original source was found among the Tavily results.")
+    claim_source: str = Field("", description="The best/most likely primary source (URL or title).")
+    claim_url: str = Field("", description="The URL of the primary source if available, otherwise ''.")
+    alerts: List[str] = Field([], description="Any alerts or warnings about the claim")
+
+class ResearchPlan(BaseModel):
+    research_queries: List[str] = Field([], description="Ordered list of search queries to run to gather evidence for the claim.")
+    research_focus: str = Field("", description="What the research should focus on (e.g. fact checks, official statements, datasets).")
