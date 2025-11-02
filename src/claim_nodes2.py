@@ -21,63 +21,64 @@ def checkable_fact(state: AgentStateClaim) -> Command[Literal["checkable_confirm
 
     """ Check if a claim is potentially checkable. """
     
-    # if it just came back from a human in the loop run, skip this step
-    if not state.get("awaiting_user"):
+    #Retrieve conversation history
+    conversation_history = list(state.get("messages", []))
 
-        #Retrieve conversation history
-        conversation_history = list(state.get("messages", []))
-
-        # Add the last message into a string for the prompt
-        recent_messages = conversation_history[-MAX_HISTORY_MESSAGES:]  # tune this number
-        messages_str = get_buffer_string(recent_messages)
-
-        # Use structured output
-        structured_llm = llm.with_structured_output(SubjectResult, method="json_mode")
-
-        # Create a prompt
-        prompt = checkable_check_prompt.format(
-            claim=state.get("claim", ""),
-            messages=messages_str,
-        )
-
-        #invoke the LLM and store the output
-        result = structured_llm.invoke([HumanMessage(content=prompt)])
-
-        # checkable is a boolean in State
-        is_checkable = result.checkable == "POTENTIALLY CHECKABLE"
-
-        # human-readable assistant message for the chat
-        explanation_text = (
-            f"**Checkability analysis**\n"
-            f"- Checkable: `{result.checkable}`\n"
-            f"- Reason: {result.explanation}\n"
-        )
-        if result.question:
-            explanation_text += f"- Follow-up for you: {result.question}\n"
-
-        ai_chat_msg = AIMessage(content=explanation_text)
-
-        # build updated history
-        new_messages = conversation_history + [ai_chat_msg]
-
-        # Goto next node and update State
+    # If we already computed checkability in a previous turn, don't do it again
+    if state.get("checkable") is not None:
         return Command(
-            goto="checkable_confirmation", 
+            goto="checkable_confirmation",
             update={
-                "question": result.question,
-                "checkable": is_checkable,
-                "explanation": result.explanation,
-                "messages": new_messages,
-                "awaiting_user": True,
-            }
-        )
-    else:
-        return Command(
-            goto="checkable_confirmation", 
-            update={
-                "awaiting_user": True,
+                "messages": conversation_history,
             },
         )
+
+    # Add the last message into a string for the prompt
+    recent_messages = conversation_history[-MAX_HISTORY_MESSAGES:]  # tune this number
+    messages_str = get_buffer_string(recent_messages)
+
+    # Use structured output
+    structured_llm = llm.with_structured_output(SubjectResult, method="json_mode")
+
+    # Create a prompt
+    prompt  =  checkable_check_prompt.format(
+        claim=state.get("claim", ""),
+        messages=messages_str,
+    )
+
+    #invoke the LLM and store the output
+    result = structured_llm.invoke([HumanMessage(content=prompt)])
+    #ai_msg = AIMessage(content=result.model_dump_json())
+
+    # checkable is a boolean in State
+    is_checkable = result.checkable == "POTENTIALLY CHECKABLE"
+
+    # human-readable assistant message for the chat
+    explanation_text = (
+        f"**Checkability analysis**\n"
+        f"- Checkable: `{result.checkable}`\n"
+        f"- Reason: {result.explanation}\n"
+    )
+    if result.question:
+        explanation_text += f"- Follow-up for you: {result.question}\n"
+
+    ai_chat_msg = AIMessage(content=explanation_text)
+
+    # build updated history
+    new_messages = conversation_history + [ai_chat_msg]
+    print(new_messages)
+
+    # Goto next node and update State
+    return Command(
+        goto="checkable_confirmation", 
+        update={
+            "question": result.question,
+            "checkable": is_checkable,
+            "explanation": result.explanation,
+            "messages": new_messages,
+            "awaiting_user": True,
+        }
+    )
 
 # ───────────────────────────────────────────────────────────────────────
 # CHECKABLE_CONFIRMATION NODE
@@ -90,8 +91,6 @@ def checkable_confirmation(state: AgentStateClaim) -> Command[Literal["retrieve_
     #Retrieve conversation history
     conversation_history = list(state.get("messages", []))
     user_answer = get_new_user_reply(conversation_history)
-    print(conversation_history)
-    print(user_answer)
 
     # if we don't have a fresh user answer yet, stop here and let the UI ask
     if user_answer is None:

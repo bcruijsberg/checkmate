@@ -21,6 +21,7 @@ class AgentStateClaim(TypedDict):
     question: Optional[str]
     alerts: List[str] = Field(default_factory=list)
     summary: Optional[str]
+    awaiting_user: bool
 
 class AgentStateSource(TypedDict):
     messages: Annotated[Sequence[BaseMessage], add_messages]

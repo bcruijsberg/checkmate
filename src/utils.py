@@ -1,15 +1,14 @@
 from newspaper import Article
 from typing_extensions import List, Optional
-from langchain_core.messages import BaseMessage
-from langchain_core.messages import HumanMessage
+from langchain_core.messages import BaseMessage,AIMessage,HumanMessage
 
 # ────────────────────────────────────────────────────────────
 # HELPER FUNCTION TO FETCH FULL ARTICLE CONTENT
 # ────────────────────────────────────────────────────────────
 def fetch_full_article(url) -> tuple[str, bool]:
-    """
-    Fetch and return the full text of an article from a given URL.
-    """
+    
+    """ Fetch and return the full text of an article from a given URL. """
+
     try:
         article = Article(url)
         article.download()
@@ -25,9 +24,9 @@ max_chars = 1200
 # HELPER FUNCTION TO COMBINE SUMMARY AND FULL ARTICLE CONTENT, AND SEPERATE URLS
 # ───────────────────────────────────────────────────────────────────────────────
 def format_docs(docs) -> str:
-    """
-    Format the found documents to format
-    """
+
+    """ Format the found documents to format """
+
     formatted = []
     for i, d in enumerate(docs, start=0):
         summary = (d.page_content or "").strip()
@@ -54,8 +53,17 @@ def format_docs(docs) -> str:
 # HELPER FUNCTION TO TAKE INPUT FROM USER
 # ────────────────────────────────────────────────────────────
 
-def get_last_user_message(messages: List[BaseMessage]) -> Optional[str]:
-    for m in reversed(messages):
+""" Get newest user reply """
+
+def get_new_user_reply(messages: List[BaseMessage]) -> Optional[str]:
+    last_h = -1
+    last_a = -1
+    for i, m in enumerate(messages):
         if isinstance(m, HumanMessage):
-            return m.content
+            last_h = i
+        elif isinstance(m, AIMessage):
+            last_a = i
+    # user spoke after assistant → real reply
+    if last_h > last_a:
+        return messages[last_h].content
     return None
