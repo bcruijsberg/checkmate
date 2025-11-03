@@ -22,6 +22,7 @@ class AgentStateClaim(TypedDict):
     alerts: List[str] = Field(default_factory=list)
     summary: Optional[str]
     awaiting_user: bool
+    explanation: Optional[str]
 
 class AgentStateSource(TypedDict):
     messages: Annotated[Sequence[BaseMessage], add_messages]
@@ -40,7 +41,7 @@ class AgentStateSource(TypedDict):
     primary_source: Optional[bool]
     match: Optional[bool]
     explanation: Optional[str]
-
+    awaiting_user: bool
 
 #output models for structured output
 class SubjectResult(BaseModel):

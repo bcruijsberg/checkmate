@@ -22,8 +22,14 @@ def checkable_fact(state: AgentStateClaim) -> Command[Literal["checkable_confirm
     """ Check if a claim is potentially checkable. """
     
     # if it just came back from a human in the loop run, skip this step
-    if not state.get("awaiting_user"):
-
+    if state.get("awaiting_user"):
+        return Command(
+            goto="checkable_confirmation", 
+            update={
+                "awaiting_user": True,
+            },
+        )
+    else:
         #Retrieve conversation history
         conversation_history = list(state.get("messages", []))
 
@@ -71,13 +77,6 @@ def checkable_fact(state: AgentStateClaim) -> Command[Literal["checkable_confirm
                 "awaiting_user": True,
             }
         )
-    else:
-        return Command(
-            goto="checkable_confirmation", 
-            update={
-                "awaiting_user": True,
-            },
-        )
 
 # ───────────────────────────────────────────────────────────────────────
 # CHECKABLE_CONFIRMATION NODE
@@ -87,82 +86,82 @@ def checkable_confirmation(state: AgentStateClaim) -> Command[Literal["retrieve_
 
     """ Get confirmation from user on the gathered information. """
 
-    #Retrieve conversation history
-    conversation_history = list(state.get("messages", []))
-    user_answer = get_new_user_reply(conversation_history)
-    print(conversation_history)
-    print(user_answer)
-
-    # if we don't have a fresh user answer yet, stop here and let the UI ask
-    if user_answer is None:
-        # this is the *AI* message asking the user
-        ask_msg = AIMessage(
-            content="Does this look like a claim you want to fact-check? You can reply with 'yes' or 'no'."
-        )
+    if state.get("awaiting_user"):
+        # Retrieve conversation history
+        conversation_history = list(state.get("messages", []))
+        
+        ask_msg = AIMessage(content="Does this look like a claim you want to fact-check? You can reply with 'yes' or 'no'.")
         return Command(
-            goto="await_user",
+            goto="await_user", 
             update={
                 "messages": conversation_history + [ask_msg],
-                "awaiting_user": True,
+                "awaiting_user": False,
             },
         )
-
-    # Use structured output
-    structured_llm = llm.with_structured_output(ConfirmationResult, method="json_mode")
-
-    # Create a prompt
-    prompt  =  confirmation_checkable_prompt.format(
-        claim=state.get("claim", ""),
-        checkable=state.get("checkable", ""),
-        explanation=state.get("explanation", ""),
-        user_answer=user_answer,
-    )
-
-    #invoke the LLM and store the output
-    result = structured_llm.invoke([HumanMessage(content=prompt)])
-    ai_msg = AIMessage(content=result.model_dump_json())
-
-    # human-readable assistant message for the chat
-    if result.confirmed:
-        confirm_text = "We'll continue with this claim."
     else:
-        confirm_text = "Okay let's revise the claim or stop here."
+        # Retrieve conversation history
+        conversation_history = list(state.get("messages", []))
 
-    ai_chat_msg = AIMessage(content=confirm_text)
+        # Get user reply, if the last message was a user message
+        user_answer = get_new_user_reply(conversation_history)
+        print(conversation_history)
+        print(user_answer)
 
-    # build updated history
-    new_messages = conversation_history + [ai_msg, ai_chat_msg]
+        # Use structured output
+        structured_llm = llm.with_structured_output(ConfirmationResult, method="json_mode")
 
-    # Goto next node and update State
-    if result.confirmed:
-        if state.get("checkable"):
-            return Command(
-                    goto="retrieve_information", 
-                    update={
-                        "confirmed": result.confirmed,
-                        "messages": new_messages,
-                        "awaiting_user": False,
-                    }
-            )   
-        else: 
-             # user confirmed but claim is not checkable → end
-            end_msg = AIMessage(content="This claim appears to be uncheckable, so we'll stop the process here.")
-            return Command(
-                    goto=END, 
-                    update={
-                        "confirmed": result.confirmed,
-                        "messages": new_messages + [end_msg],
-                        "awaiting_user": False,
-                    }
-            )   
-    else:
-        return Command(
-                goto="checkable_fact", 
-                update={
-                    "messages": new_messages,
-                    "awaiting_user": False,
-                }
+        # Create a prompt
+        prompt = confirmation_checkable_prompt.format(
+            claim=state.get("claim", ""),
+            checkable=state.get("checkable", ""),
+            explanation=state.get("explanation", ""),
+            user_answer=user_answer,
         )
+
+        #invoke the LLM and store the output
+        result = structured_llm.invoke([HumanMessage(content=prompt)])
+        
+        # human-readable assistant message for the chat
+        if result.confirmed:
+            confirm_text = "We'll continue with this claim."
+        else:
+            confirm_text = "Okay let's revise the claim or stop here."
+
+        ai_chat_msg = AIMessage(content=confirm_text)
+
+        # build updated history
+        new_messages = conversation_history + [ai_chat_msg]
+
+        # Goto next node and update State
+        if result.confirmed:
+            if state.get("checkable"):
+                return Command(
+                        goto="retrieve_information", 
+                        update={
+                            "confirmed": result.confirmed,
+                            "messages": new_messages,
+                            "awaiting_user": False,
+                        }
+                )   
+            else: 
+                # user confirmed but claim is not checkable → end
+                end_msg = AIMessage(content="This claim appears to be uncheckable, so we'll stop the process here.")
+                return Command(
+                        goto=END, 
+                        update={
+                            "confirmed": result.confirmed,
+                            "messages": new_messages + [end_msg],
+                            "awaiting_user": False,
+                        }
+                )   
+        else:
+            return Command(
+                    goto="checkable_fact", 
+                    update={
+                        "messages": new_messages,
+                        "awaiting_user": True,
+                    }
+            )
 
 # ───────────────────────────────────────────────────────────────────────
 # RETRIEVE_INFORMATION NODE

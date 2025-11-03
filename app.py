@@ -76,25 +76,42 @@ import streamlit as st
 st.set_page_config(page_title="CheckMate", page_icon="✅")
 st.title("🕵️ CheckMate – Claim checker")
 
-# init session state, ask the first question and add it to messages
+# First question
+claim_question="What claim do you want to investigate?"
+
+# initialize session messages, ask the first question and add it to messages
 if "messages" not in st.session_state:
     st.session_state.messages = []
-    claim_question="What claim do you want to investigate?"
-    st.session_state.messages.append({"role": "assistent", "content": claim_question})
-    with st.chat_message("assistent"):
+    st.session_state.messages.append({"role": "assistant", "content": claim_question})
+    with st.chat_message("assistant"):
         st.write(claim_question)
+
+# Initialize booleans to determine the FLOW
+if "claim_done" not in st.session_state:
+    st.session_state.claim_done = False
+if "source_done" not in st.session_state:
+    st.session_state.source_done = False
 
 # Get user input
 prompt = st.chat_input("")
-if prompt:
-    # show user message in UI
-    st.session_state.messages.append({"role": "user", "content": prompt})
-    with st.chat_message("user"):
-        st.write(prompt)
 
-# running graph state
-if "claim_state" not in st.session_state:
-    st.session_state.claim_state = {
+if not prompt:
+    # stop execution until user provides input
+    st.stop()
+
+# When we reach here, user has submitted input
+st.session_state.messages.append({"role": "user", "content": prompt})
+with st.chat_message("user"):
+    st.write(prompt)
+
+# ───────────────────────────────────────────────────────────────────
+# PHASE 1: CLAIM FLOW
+# ───────────────────────────────────────────────────────────────────
+if not st.session_state.claim_done:
+
+    # initialize session state, if it does not exist
+    if "claim_state" not in st.session_state:
+        st.session_state.claim_state = {
                 "messages": [AIMessage(content=claim_question),HumanMessage(content=prompt)],
                 "claim": prompt,
                 "checkable": None,
@@ -107,39 +124,12 @@ if "claim_state" not in st.session_state:
                 "alerts": [],
                 "summary": None,
                 "awaiting_user": False,
+                "explanation": None,
             }
-    st.session_state.claim_done = False
-else:
-    # add new user message to running claim state
-    st.session_state.claim_state["messages"].append(HumanMessage(content=prompt))
+    else:
+        # add new user message to existing claim state
+        st.session_state.claim_state["messages"].append(HumanMessage(content=prompt))
 
-
-
-# if "source_state" not in st.session_state:
-#     st.session_state.source_state = None
-# if "source_done" not in st.session_state:
-#     st.session_state.source_done = False
-
-# show chat history
-# Display chat messages from history on app rerun
-# for message in st.session_state.messages:
-#     with st.chat_message(message["role"]):
-#         st.markdown(message["content"])
-
-# # prompt depends on where we are
-# prompt_text = "What claim do you want to investigate?"
-# if st.session_state.claim_done and not st.session_state.source_done:
-#     prompt_text = "Add a source/URL or say where the claim appeared:"
-# elif st.session_state.claim_done and st.session_state.source_done:
-#     prompt_text = "You can continue or start a new claim."
-
-# user_input = st.chat_input(prompt_text)
-
-# ───────────────────────────────────────────────────────────────────
-# PHASE 1: CLAIM FLOW
-# ───────────────────────────────────────────────────────────────────
-if not st.session_state.claim_done:
-    
     # remember how many messages we had before this run, to determine new messages
     prev_len = len(st.session_state.claim_state["messages"])
 
@@ -162,16 +152,15 @@ if not st.session_state.claim_done:
 # PHASE 2: SOURCE FLOW
 # ───────────────────────────────────────────────────────────────────
 elif not st.session_state.source_done:
-    if st.session_state.source_state is None:
+
+    #initialize the source_state
+    if "source_state" not in st.session_state:
         prev = st.session_state.claim_state
         st.session_state.source_state = {
-            "messages": prev.get("messages", []) + [HumanMessage(content=user_input)],
-            "claim": prev.get("claim", user_input),
+            "messages": prev.get("messages", []) + [HumanMessage(content=prompt)],
+            "claim": prev.get("claim", ""),
             "checkable": True,
             "subject": prev.get("subject", ""),
-            "quantitative": prev.get("quantitative", ""),
-            "precision": prev.get("precision", ""),
-            "based_on": prev.get("based_on", ""),
             "confirmed": False,
             "search_queries": [],
             "tavily_context": None,
@@ -183,9 +172,12 @@ elif not st.session_state.source_done:
             "claim_source": None,
             "primary_source": False,
             "match": False,
+            "explanation": None,
+            "awaiting_user": False,
+
         }
     else:
-        st.session_state.source_state["messages"].append(HumanMessage(content=user_input))
+        st.session_state.source_state["messages"].append(HumanMessage(content=prompt))
 
     prev_len = len(st.session_state.source_state["messages"])
 
