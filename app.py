@@ -12,7 +12,7 @@ sys.path.append(os.path.abspath("./src"))
 # ───────────────────────────────────────────────────────────────────────
 # CLAIM GRAPH
 # ───────────────────────────────────────────────────────────────────────
-from claim_nodes import checkable_fact,checkable_confirmation,retrieve_information,clarify_information,produce_summary,get_confirmation,await_user
+from claim_nodes import checkable_fact,checkable_confirmation,retrieve_information,clarify_information,produce_summary,get_confirmation
 from langgraph.graph import StateGraph, START, END
 from state_scope import AgentStateClaim, AgentStateSource
 from source_nodes import claim_matching,match_or_continue,get_source,get_primary_source,locate_primary_source,select_primary_source,research_claim
@@ -21,7 +21,6 @@ claim = StateGraph(AgentStateClaim)
 
 claim.add_node("checkable_fact", checkable_fact)
 claim.add_node("checkable_confirmation", checkable_confirmation)
-claim.add_node("await_user", await_user)
 claim.add_node("retrieve_information", retrieve_information)
 claim.add_node("clarify_information", clarify_information)
 claim.add_node("produce_summary", produce_summary)
@@ -33,7 +32,7 @@ claim.add_edge(START, "checkable_fact")
 claim.add_edge("checkable_fact", "checkable_confirmation")
 claim.add_edge("retrieve_information", "clarify_information")
 claim.add_edge("produce_summary", "get_confirmation")
-claim.add_edge("await_user", END)
+claim.add_edge("get_confirmation", END)
 
 claim_flow = claim.compile()
 
@@ -57,6 +56,19 @@ source.add_edge("locate_primary_source", "select_primary_source")
 source.add_edge("research_claim", END)
 
 source_flow = source.compile()
+
+
+if "render_cursor_claim" not in st.session_state:
+    st.session_state.render_cursor_claim = 0
+
+def show_new_ai_messages(final_messages):
+    start = st.session_state.render_cursor_claim
+    for m in final_messages[start:]:
+        if isinstance(m, AIMessage):
+            with st.chat_message("assistant"):
+                st.write(m.content)
+            st.session_state.messages.append({"role": "assistant", "content": m.content})
+    st.session_state.render_cursor_claim = len(final_messages)
 
 # helper to show only the messages that were added in this run
 def show_new_ai_messages(prev_len, final_messages):
@@ -85,6 +97,7 @@ if "messages" not in st.session_state:
     st.session_state.messages.append({"role": "assistant", "content": claim_question})
     with st.chat_message("assistant"):
         st.write(claim_question)
+    print("messages starte")    
 
 # Initialize booleans to determine the FLOW
 if "claim_done" not in st.session_state:
@@ -103,7 +116,7 @@ if not prompt:
 st.session_state.messages.append({"role": "user", "content": prompt})
 with st.chat_message("user"):
     st.write(prompt)
-
+print(prompt)
 # ───────────────────────────────────────────────────────────────────
 # PHASE 1: CLAIM FLOW
 # ───────────────────────────────────────────────────────────────────
@@ -111,8 +124,9 @@ if not st.session_state.claim_done:
 
     # initialize session state, if it does not exist
     if "claim_state" not in st.session_state:
+        print("claimstate started")  
         st.session_state.claim_state = {
-                "messages": [AIMessage(content=claim_question),HumanMessage(content=prompt)],
+                "messages": [HumanMessage(content=prompt)],
                 "claim": prompt,
                 "checkable": None,
                 "subject": None,
@@ -126,6 +140,7 @@ if not st.session_state.claim_done:
                 "awaiting_user": False,
                 "explanation": None,
             }
+        print(f"first time printing messages: {st.session_state.claim_state["messages"]}\n\n")
     else:
         # add new user message to existing claim state
         st.session_state.claim_state["messages"].append(HumanMessage(content=prompt))
@@ -136,6 +151,9 @@ if not st.session_state.claim_done:
     # run claim graph for THIS turn
     claim_out = claim_flow.invoke(st.session_state.claim_state)
     st.session_state.claim_state = claim_out
+
+    print("test this is claim_flow")
+    print(f"second time printing messages: {st.session_state.claim_state["messages"]}\n\n")
 
     # show only messages produced in THIS turn
     final_messages = claim_out.get("messages", [])

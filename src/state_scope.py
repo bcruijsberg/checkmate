@@ -9,8 +9,8 @@ from operator import add as add_messages
 from langgraph.graph.message import MessagesState
 
 
-class AgentStateClaim(TypedDict):
-    messages: Annotated[Sequence[BaseMessage], add_messages]
+class AgentStateClaim(MessagesState):
+    messages: Annotated[List[BaseMessage], add_messages]
     claim: str 
     checkable: Optional[bool]
     subject: Optional[str]
@@ -25,7 +25,7 @@ class AgentStateClaim(TypedDict):
     explanation: Optional[str]
 
 class AgentStateSource(TypedDict):
-    messages: Annotated[Sequence[BaseMessage], add_messages]
+    messages: Annotated[List[BaseMessage], add_messages]
     claim: str 
     checkable: Optional[bool]
     subject: Optional[str]

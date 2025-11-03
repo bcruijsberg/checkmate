@@ -42,9 +42,6 @@ def claim_matching(stateSource: AgentStateSource) -> Command[Literal["match_or_c
     # First model call: only the prompt
     result = llm_tools.invoke([human])
 
-    # Keep a log in state 
-    conversation_history.append(result)   
-
     # Iterate tool calls
     while getattr(result, "tool_calls", None):
 
@@ -71,9 +68,6 @@ def claim_matching(stateSource: AgentStateSource) -> Command[Literal["match_or_c
         # Next model call, and decide if more tool calls are needed
         result = llm_tools.invoke([human, result, *tool_msgs])
 
-        # Log messages to conversation history
-        conversation_history.append(result)
-
     # After we finish tool-calling, ask the user to decide
     followup_msg = AIMessage(
         content=(
@@ -82,14 +76,11 @@ def claim_matching(stateSource: AgentStateSource) -> Command[Literal["match_or_c
         )
     )
     
-    # build updated history
-    new_messages = conversation_history + [followup_msg]
-
     # Goto next node and update State
     return Command( 
             goto="match_or_continue",
             update={
-                "messages": new_messages
+                "messages": [human] + [result] + [followup_msg]
             }
     )  
 
@@ -120,27 +111,23 @@ def match_or_continue(stateSource: AgentStateSource) -> Command[Literal["get_sou
 
     #invoke the LLM and store the output
     result = structured_llm.invoke([HumanMessage(content=prompt)])
-    ai_msg = AIMessage(content=result.model_dump_json())
 
    # human-readable assistant message for the chat
     if result.match:
-        chat_msg = AIMessage(
+        ai_chat_msg = AIMessage(
             content=(
                 "This claim appears to match an already researched claim. "
                 "We can stop the process here."
             )
         )
     else:
-        chat_msg = AIMessage(
+        ai_chat_msg = AIMessage(
             content=(
                 "No exact match found. Let's continue researching.\n"
                 "Do you have a URL for the source of the claim? If so, please share it.\n"
                 "If not, tell me who made the claim and in what medium (article, video, social media, etc.)."
             )
         )
-    
-    # build updated history
-    new_messages = conversation_history + [ai_msg, chat_msg]
     
     # Goto next node and update State
     if result.match:
@@ -150,7 +137,7 @@ def match_or_continue(stateSource: AgentStateSource) -> Command[Literal["get_sou
                 update={
                     "match": result.match,
                     "explanation": result.explanation,
-                    "messages": new_messages,  
+                    "messages": [ai_chat_msg],  
                 }
         )       
     else:
@@ -158,7 +145,7 @@ def match_or_continue(stateSource: AgentStateSource) -> Command[Literal["get_sou
                 goto="get_source", 
                 update={
                     "explanation": result.explanation,
-                    "messages": new_messages,  
+                    "messages": [ai_chat_msg],  
                 }
         )
 
@@ -189,7 +176,6 @@ def get_source(stateSource: AgentStateSource) -> Command[Literal["get_primary_so
 
     #invoke the LLM and store the output
     result = structured_llm.invoke([HumanMessage(content=prompt)])
-    ai_msg = AIMessage(content=result.model_dump_json())
 
     # human-readable assistant message for the chat
     if result.claim_source:
@@ -207,16 +193,13 @@ def get_source(stateSource: AgentStateSource) -> Command[Literal["get_primary_so
 
     ai_chat_msg = AIMessage(content=followup_text)
 
-    # build updated history
-    new_messages = conversation_history + [ai_msg, ai_chat_msg]
-
     # Goto next node and update State
     return Command(
             goto=END, 
             update={
                 "claim_source": result.claim_source,
                 "claim_url": result.claim_url,
-                "messages":new_messages,
+                "messages": [ai_chat_msg],
             }
     ) 
 
@@ -251,8 +234,6 @@ def get_primary_source(stateSource: AgentStateSource) -> Command[Literal["resear
 
     #invoke the LLM and store the output
     result = structured_llm.invoke([HumanMessage(content=prompt)])
-    ai_msg = AIMessage(content=result.model_dump_json())
-    conversation_history.append(ai_msg)
 
     # human-readable assistant message for the chat
     if result.primary_source:
@@ -277,9 +258,6 @@ def get_primary_source(stateSource: AgentStateSource) -> Command[Literal["resear
 
     ai_chat_msg = AIMessage(content=chat_text)
 
-    # build updated history
-    new_messages = conversation_history + [ai_msg, ai_chat_msg]
-
     # Goto next node and update State
     if result.primary_source:
         return Command(
@@ -288,7 +266,7 @@ def get_primary_source(stateSource: AgentStateSource) -> Command[Literal["resear
                 "primary_source": result.primary_source,
                 "claim_source": result.claim_source,
                 "search_queries": result.search_queries,
-                "messages": new_messages,
+                "messages":  [ai_chat_msg],
             }
         )    
     else:
@@ -298,7 +276,7 @@ def get_primary_source(stateSource: AgentStateSource) -> Command[Literal["resear
                 "primary_source":result.primary_source,
                 "claim_source": result.claim_source,
                 "search_queries": result.search_queries,
-                "messages": new_messages,
+                "messages":  [ai_chat_msg],
             }
         )  
 
@@ -306,18 +284,18 @@ def get_primary_source(stateSource: AgentStateSource) -> Command[Literal["resear
 # LOCATE PRIMARY SOURCE
 # ───────────────────────────────────────────────────────────────────────
 
+from typing import Literal, List
+from langchain_core.messages import AIMessage, ToolMessage, BaseMessage
+from langgraph.types import Command
+
 def locate_primary_source(stateSource: AgentStateSource) -> Command[Literal["select_primary_source"]]:
+    """Run Tavily for each prepared query and store all results."""
 
-    """ Run Tavily for each prepared query and store all results. """
-
-    # Get the context from stateSource
-    conversation_history = list(stateSource.get("messages", []))
     search_queries = stateSource.get("search_queries", []) or []
 
-    # A list to store the search results
     tavily_results = []
+    new_msgs: List[BaseMessage] = []
 
-    # Loop over the search_queries
     for q in search_queries:
         if not q:
             continue
@@ -328,51 +306,40 @@ def locate_primary_source(stateSource: AgentStateSource) -> Command[Literal["sel
 
         print(f"\n-- locate_primary_source: running tavily_search for: {q} --")
         tool_output = tavily_tool.invoke({"query": q})
+        tavily_results.append({"query": q, "result": tool_output})
 
-        tavily_results.append({
-            "query": q,
-            "result": tool_output,
-        })
-
-        #show the output
-        print(tool_output)
-
-        conversation_history.append(
+        # OPTIONAL: keep ToolMessage tiny; don't stuff full results here
+        new_msgs.append(
             ToolMessage(
                 name="tavily_search",
-                content=str(tool_output),
+                content=f"Search completed for: {q}",
                 tool_call_id=f"tavily-{hash(q)}",
             )
         )
 
-    # add a chat message telling the user what's next
+    # Human-facing follow-up
     if tavily_results:
-        followup_msg = AIMessage(
-            content=(
-                "I searched for possible original / official sources using the queries we prepared.\n"
-                "Please tell me which of the results looks like the **original / primary** source, "
-                "or say 'none' if none of them is correct."
-            )
+        followup_text = (
+            "I searched for likely original/official sources using our queries.\n"
+            "Tell me which result looks like the **original / primary** source, or say 'none'."
         )
     else:
-        followup_msg = AIMessage(
-            content=(
-                "I couldn’t run a useful search because there were no queries. "
-                "Tell me more about the original source (URL, outlet, author, or organization)."
-            )
+        followup_text = (
+            "I couldn’t run a useful search because there were no queries. "
+            "Please share the original source (URL, outlet, author, or organization)."
         )
-    
-    ai_chat_msg = AIMessage(content=followup_text)
 
-    # build updated history
-    new_messages = conversation_history + [ai_chat_msg]
+    new_msgs.append(
+        AIMessage(content=followup_text, additional_kwargs={"display": True})
+    )
 
-    # Goto next node and update State
+    # Return only the delta; the reducer (add_messages) will append these
     return Command(
         goto="select_primary_source",
         update={
-            "tavily_context": tavily_results,
-            "messages": new_messages,
+            "tavily_context": tavily_results,  # keep bulky data in state, not in messages
+            "messages": new_msgs,
+            "awaiting_user": True,  # if your next node expects to wait for user choice
         },
     )
 
@@ -413,7 +380,6 @@ def select_primary_source(stateSource: AgentStateSource) -> Command[Literal["res
 
     #invoke the LLM and store the output
     result = structured_llm.invoke([HumanMessage(content=prompt)])
-    ai_msg = AIMessage(content=result.model_dump_json())
 
    # Add a warning if the primary source is not found
     alerts = list(stateSource.get("alerts", []))
@@ -436,9 +402,6 @@ def select_primary_source(stateSource: AgentStateSource) -> Command[Literal["res
             )
         )
 
-    # build updated history
-    new_messages = conversation_history + [ai_msg, ai_chat_msg]
-
     # Goto next node and update State
     return Command(
         goto="research_claim",
@@ -446,7 +409,7 @@ def select_primary_source(stateSource: AgentStateSource) -> Command[Literal["res
             "primary_source": result.primary_source,
             "claim_source": result.claim_source or stateSource.get("claim_source", ""),
             "claim_url": result.claim_url or stateSource.get("claim_url", ""),
-            "messages": new_messages,
+            "messages": [ai_chat_msg],
             "alerts": alerts
         },
     )
@@ -455,22 +418,27 @@ def select_primary_source(stateSource: AgentStateSource) -> Command[Literal["res
 # RESEARCH CLAIM
 # ───────────────────────────────────────────────────────────────────────
 
-def research_claim(stateSource: AgentStateSource) -> Command[Literal["__end__"]]:
+from typing import Literal, List
+from langchain_core.messages import AIMessage, HumanMessage, ToolMessage, BaseMessage
+from langgraph.types import Command
+from langgraph.graph import END
 
-    """ create several research queries, and run tavily_search for each query """
+MAX_HISTORY_MESSAGES = 6 
+
+def research_claim(stateSource: AgentStateSource) -> Command[Literal["__end__"]]:
+    """Create research queries and run tavily_search for each query."""
+
+    # Get the context and conversation history
+    conversation_history = list(stateSource.get("messages", []))
+    alerts = list(stateSource.get("alerts", []))
+
+    recent_messages = conversation_history[-MAX_HISTORY_MESSAGES:]
+    messages_str = get_buffer_string(recent_messages)
 
     # Use structured output 
     structured_llm = llm.with_structured_output(ResearchPlan, method="json_mode")
 
-    # retrieve conversation history and alerts
-    conversation_history = list(stateSource.get("messages", []))
-    alerts = list(stateSource.get("alerts", []))
-
-    # Add the last message into a string for the prompt
-    recent_messages = conversation_history[-MAX_HISTORY_MESSAGES:]  # tune this number
-    messages_str = get_buffer_string(recent_messages)
-
-    # Create a prompt
+      # Create a prompt
     prompt = research_prompt.format(
         summary=stateSource.get("summary", ""),
         subject=stateSource.get("subject", ""),
@@ -479,19 +447,16 @@ def research_claim(stateSource: AgentStateSource) -> Command[Literal["__end__"]]
         alerts=alerts,
         messages=messages_str,
     )
-
-    # 
-    #invoke the LLM and store the output
     result = structured_llm.invoke([HumanMessage(content=prompt)])
-    ai_msg = AIMessage(content=result.model_dump_json())
-    conversation_history.append(ai_msg)
 
-    # 2) run Tavily for each proposed query
+    # We'll collect ONLY new messages in this list and return them.
+    new_msgs: List[BaseMessage] = []
+
+    # Run Tavily for each proposed query
     research_results = []
-    for q in result.research_queries:
+    for q in result.research_queries or []:
         if not q:
             continue
-
         tavily_tool = tools_dict.get("tavily_search")
         if tavily_tool is None:
             continue
@@ -499,37 +464,31 @@ def research_claim(stateSource: AgentStateSource) -> Command[Literal["__end__"]]
         print(f"\n-- research_claim: running tavily_search for: {q} --")
         tool_output = tavily_tool.invoke({"query": q})
 
-        research_results.append({
-            "query": q,
-            "result": tool_output,
-        })
+        research_results.append({"query": q, "result": tool_output})
 
-        # add to history
-        conversation_history.append(
+        # Optional: minimal ToolMessage so the message stream shows the action occurred
+        new_msgs.append(
             ToolMessage(
                 name="tavily_search",
-                content=str(tool_output),
+                content=f"Search completed for: {q}",
                 tool_call_id=f"tavily-research-{hash(q)}",
             )
         )
 
     # human-readable assistant message
-    research_summary_lines = []
+    lines = []
     if result.research_queries:
-        research_summary_lines.append("I searched for additional evidence using these queries:")
-        research_summary_lines.extend(f"- {q}" for q in result.research_queries if q)
+        lines.append("I searched for additional evidence using these queries:")
+        lines += [f"- {q}" for q in result.research_queries if q]
     if alerts:
-        research_summary_lines.append(
-            "Note: some details were marked as missing earlier, so the search also tried to address those."
-        )
+        lines.append("Note: I also tried to address earlier missing details.")
+    if not lines:
+        lines.append("I tried to collect additional evidence for this claim.")
 
-    if not research_summary_lines:
-        research_summary_lines.append("I tried to collect additional evidence for this claim.")
-
-    ai_chat_msg = AIMessage(content="\n".join(research_summary_lines))
-
-    # build updated history
-    new_messages = conversation_history + [ai_chat_msg]
+    new_msgs.append(AIMessage(
+        content="\n".join(lines),
+        additional_kwargs={"display": True}   # your Streamlit renderer shows only display=True
+    ))
 
     # Goto next node and update State
     return Command(
@@ -538,6 +497,9 @@ def research_claim(stateSource: AgentStateSource) -> Command[Literal["__end__"]]
             "research_queries": result.research_queries,
             "research_focus": result.research_focus,
             "research_results": research_results,
-            "messages": new_messages,
+            "messages": new_msgs,
+            # Usually not awaiting user at END, but set flags as your flow expects
+            "awaiting_user": False,
         },
     )
+

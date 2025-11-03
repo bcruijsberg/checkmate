@@ -20,13 +20,14 @@ MAX_HISTORY_MESSAGES = 6
 def checkable_fact(state: AgentStateClaim) -> Command[Literal["checkable_confirmation"]]:
 
     """ Check if a claim is potentially checkable. """
-    
+    print(f"checkfact: {list(state.get('messages', []))}\n\n")
+
     # if it just came back from a human in the loop run, skip this step
     if state.get("awaiting_user"):
         return Command(
             goto="checkable_confirmation", 
             update={
-                "awaiting_user": True,
+                "awaiting_user": False,
             },
         )
     else:
@@ -63,9 +64,6 @@ def checkable_fact(state: AgentStateClaim) -> Command[Literal["checkable_confirm
 
         ai_chat_msg = AIMessage(content=explanation_text)
 
-        # build updated history
-        new_messages = conversation_history + [ai_chat_msg]
-
         # Goto next node and update State
         return Command(
             goto="checkable_confirmation", 
@@ -73,7 +71,7 @@ def checkable_fact(state: AgentStateClaim) -> Command[Literal["checkable_confirm
                 "question": result.question,
                 "checkable": is_checkable,
                 "explanation": result.explanation,
-                "messages": new_messages,
+                "messages": [ai_chat_msg],
                 "awaiting_user": True,
             }
         )
@@ -83,19 +81,18 @@ def checkable_fact(state: AgentStateClaim) -> Command[Literal["checkable_confirm
 # ───────────────────────────────────────────────────────────────────────
 
 def checkable_confirmation(state: AgentStateClaim) -> Command[Literal["retrieve_information","__end__","checkable_fact"]]:
-
+    
     """ Get confirmation from user on the gathered information. """
-
+    print(f"checkconfirm: {list(state.get('messages', []))}\n\n")
+ 
     if state.get("awaiting_user"):
-        # Retrieve conversation history
-        conversation_history = list(state.get("messages", []))
-        
+
         ask_msg = AIMessage(content="Does this look like a claim you want to fact-check? You can reply with 'yes' or 'no'.")
         return Command(
-            goto="await_user", 
+            goto="__end__", 
             update={
-                "messages": conversation_history + [ask_msg],
-                "awaiting_user": False,
+                "messages": [ask_msg],
+                "awaiting_user": True,
             },
         )
     else:
@@ -104,8 +101,6 @@ def checkable_confirmation(state: AgentStateClaim) -> Command[Literal["retrieve_
 
         # Get user reply, if the last message was a user message
         user_answer = get_new_user_reply(conversation_history)
-        print(conversation_history)
-        print(user_answer)
 
         # Use structured output
         structured_llm = llm.with_structured_output(ConfirmationResult, method="json_mode")
@@ -120,6 +115,7 @@ def checkable_confirmation(state: AgentStateClaim) -> Command[Literal["retrieve_
 
         #invoke the LLM and store the output
         result = structured_llm.invoke([HumanMessage(content=prompt)])
+        print(result.confirmed)
         
         # human-readable assistant message for the chat
         if result.confirmed:
@@ -129,9 +125,6 @@ def checkable_confirmation(state: AgentStateClaim) -> Command[Literal["retrieve_
 
         ai_chat_msg = AIMessage(content=confirm_text)
 
-        # build updated history
-        new_messages = conversation_history + [ai_chat_msg]
-
         # Goto next node and update State
         if result.confirmed:
             if state.get("checkable"):
@@ -139,7 +132,7 @@ def checkable_confirmation(state: AgentStateClaim) -> Command[Literal["retrieve_
                         goto="retrieve_information", 
                         update={
                             "confirmed": result.confirmed,
-                            "messages": new_messages,
+                            "messages": [ai_chat_msg],
                             "awaiting_user": False,
                         }
                 )   
@@ -150,15 +143,16 @@ def checkable_confirmation(state: AgentStateClaim) -> Command[Literal["retrieve_
                         goto=END, 
                         update={
                             "confirmed": result.confirmed,
-                            "messages": new_messages + [end_msg],
+                            "messages": [ai_chat_msg] + [end_msg],
                             "awaiting_user": False,
                         }
                 )   
         else:
+            print("testing")
             return Command(
                     goto="checkable_fact", 
                     update={
-                        "messages": new_messages,
+                        "messages": [ai_chat_msg],
                         "awaiting_user": True,
                     }
             )
@@ -189,7 +183,6 @@ def retrieve_information(state: AgentStateClaim) -> Command[Literal["clarify_inf
 
     #invoke the LLM and store the output
     result = structured_llm.invoke([HumanMessage(content=prompt)])
-    ai_msg = AIMessage(content=result.model_dump_json())
 
     # human-readable assistant message for the chat
     details_text = (
@@ -206,9 +199,6 @@ def retrieve_information(state: AgentStateClaim) -> Command[Literal["clarify_inf
 
     ai_chat_msg = AIMessage(content=details_text)
 
-    # build updated history
-    new_messages = conversation_history + [ai_msg, ai_chat_msg]
-
     # Goto next node and update State
     return Command(
         goto="clarify_information", 
@@ -219,7 +209,7 @@ def retrieve_information(state: AgentStateClaim) -> Command[Literal["clarify_inf
             "based_on": result.based_on,
             "question": result.question,
             "alerts": result.alerts or [],
-            "messages": new_messages,
+            "messages": [ai_chat_msg],
         }
     )   
 
@@ -245,9 +235,9 @@ def clarify_information(state: AgentStateClaim) -> Command[Literal["produce_summ
             content="Does this description look right? Say yes/no or correct me."
         )
         return Command(
-            goto="await_user",
+            goto="__end__",
             update={
-                "messages": conversation_history + [ask_msg],
+                "messages": [ask_msg],
                 "awaiting_user": True,
             },
         )
@@ -274,7 +264,6 @@ def clarify_information(state: AgentStateClaim) -> Command[Literal["produce_summ
 
     #invoke the LLM and store the output
     result = structured_llm.invoke([HumanMessage(content=prompt)])
-    ai_msg = AIMessage(content=result.model_dump_json())
 
     # human-readable assistant message for the chat
     if result.confirmed:
@@ -284,23 +273,20 @@ def clarify_information(state: AgentStateClaim) -> Command[Literal["produce_summ
 
     ai_chat_msg = AIMessage(content=confirm_text)
 
-    # build updated history
-    new_messages = conversation_history + [ai_msg, ai_chat_msg]
-
     # Goto next node and update State
     if result.confirmed:
         return Command(
                 goto="produce_summary", 
                 update={
                     "confirmed": result.confirmed,
-                    "messages": new_messages,
+                    "messages": [ai_chat_msg],
                 }
         )       
     else:
         return Command(
                 goto="retrieve_information", 
                 update={
-                    "messages": new_messages,
+                    "messages": [ai_chat_msg],
                 }
         )
 
@@ -339,7 +325,6 @@ def produce_summary(state: AgentStateClaim) -> Command[Literal["get_confirmation
 
     #invoke the LLM and store the output
     result = structured_llm.invoke([HumanMessage(content=prompt)])
-    ai_msg = AIMessage(content=result.model_dump_json())
 
     # human-readable assistant message for the chat
     summary_text = (
@@ -350,16 +335,13 @@ def produce_summary(state: AgentStateClaim) -> Command[Literal["get_confirmation
 
     ai_chat_msg = AIMessage(content=summary_text)
 
-    # build updated history
-    new_messages = conversation_history + [ai_msg, ai_chat_msg]
-
     # Goto next node and update State
     return Command( 
             goto="get_confirmation",
             update={
                 "summary": result.summary,
                 "question": result.question,
-                "messages": new_messages,
+                "messages": [ai_chat_msg],
                 "subject": result.subject,
                 "quantitative": result.quantitative,
                 "precision": result.precision,
@@ -387,9 +369,9 @@ def get_confirmation(state: AgentStateClaim) -> Command[Literal["produce_summary
             content="Do you agree with this summary? Reply with 'yes' to finish, or tell me what to adjust."
         )
         return Command(
-            goto="await_user",
+            goto="__end__",
             update={
-                "messages": conversation_history + [ask_msg],
+                "messages": [ask_msg],
                 "awaiting_user": True,
             },
         )
@@ -405,7 +387,6 @@ def get_confirmation(state: AgentStateClaim) -> Command[Literal["produce_summary
 
     #invoke the LLM and store the output
     result = structured_llm.invoke([HumanMessage(content=prompt)])
-    ai_msg = AIMessage(content=result.model_dump_json())
 
     # human-readable assistant message for the chat
     if result.confirmed:
@@ -414,9 +395,6 @@ def get_confirmation(state: AgentStateClaim) -> Command[Literal["produce_summary
         confirm_text = "Let's revisit the summary and adjust it if needed."
 
     ai_chat_msg = AIMessage(content=confirm_text)
-
-    # build updated history
-    new_messages = conversation_history + [ai_msg, ai_chat_msg]
 
     if result.confirmed:
         return Command(
@@ -429,7 +407,7 @@ def get_confirmation(state: AgentStateClaim) -> Command[Literal["produce_summary
                     "based_on": result.based_on,
                     "question": result.question,
                     "alerts": result.alerts or [],
-                    "messages": new_messages,
+                    "messages": [ai_chat_msg],
 
                 }
         )       
@@ -437,7 +415,7 @@ def get_confirmation(state: AgentStateClaim) -> Command[Literal["produce_summary
         return Command(
                 goto="produce_summary", 
                 update={
-                    "messages": new_messages,
+                    "messages": [ai_chat_msg],
                     "subject": result.subject,
                     "quantitative": result.quantitative,
                     "precision": result.precision,
@@ -447,10 +425,3 @@ def get_confirmation(state: AgentStateClaim) -> Command[Literal["produce_summary
                 }
         )
     
-# ───────────────────────────────────────────────────────────────────────
-# USER INPUT
-# ───────────────────────────────────────────────────────────────────────
-
-def await_user(state: AgentStateClaim) -> AgentStateClaim:
-    """No-op node: stop execution and wait for user."""
-    return state
