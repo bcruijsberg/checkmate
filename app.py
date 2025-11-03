@@ -70,15 +70,6 @@ def show_new_ai_messages(final_messages):
             st.session_state.messages.append({"role": "assistant", "content": m.content})
     st.session_state.render_cursor_claim = len(final_messages)
 
-# helper to show only the messages that were added in this run
-def show_new_ai_messages(prev_len, final_messages):
-    new_msgs = final_messages[prev_len:]
-    for m in new_msgs:
-        if isinstance(m, AIMessage):
-            st.session_state.messages.append({"role": "assistant", "content": m.content})
-            with st.chat_message("assistant"):
-                st.write(m.content)
-
 # ───────────────────────────────────────────────────────────────────────
 # STREAMLIT UI
 # ───────────────────────────────────────────────────────────────────────
@@ -97,7 +88,6 @@ if "messages" not in st.session_state:
     st.session_state.messages.append({"role": "assistant", "content": claim_question})
     with st.chat_message("assistant"):
         st.write(claim_question)
-    print("messages starte")    
 
 # Initialize booleans to determine the FLOW
 if "claim_done" not in st.session_state:
@@ -116,7 +106,7 @@ if not prompt:
 st.session_state.messages.append({"role": "user", "content": prompt})
 with st.chat_message("user"):
     st.write(prompt)
-print(prompt)
+
 # ───────────────────────────────────────────────────────────────────
 # PHASE 1: CLAIM FLOW
 # ───────────────────────────────────────────────────────────────────
@@ -124,7 +114,6 @@ if not st.session_state.claim_done:
 
     # initialize session state, if it does not exist
     if "claim_state" not in st.session_state:
-        print("claimstate started")  
         st.session_state.claim_state = {
                 "messages": [HumanMessage(content=prompt)],
                 "claim": prompt,
@@ -139,25 +128,21 @@ if not st.session_state.claim_done:
                 "summary": None,
                 "awaiting_user": False,
                 "explanation": None,
+                "next_node": None,
             }
-        print(f"first time printing messages: {st.session_state.claim_state["messages"]}\n\n")
     else:
         # add new user message to existing claim state
         st.session_state.claim_state["messages"].append(HumanMessage(content=prompt))
 
-    # remember how many messages we had before this run, to determine new messages
-    prev_len = len(st.session_state.claim_state["messages"])
-
-    # run claim graph for THIS turn
+    # run claim graph 
     claim_out = claim_flow.invoke(st.session_state.claim_state)
-    st.session_state.claim_state = claim_out
 
-    print("test this is claim_flow")
-    print(f"second time printing messages: {st.session_state.claim_state["messages"]}\n\n")
+    #output state    
+    st.session_state.claim_state = claim_out
 
     # show only messages produced in THIS turn
     final_messages = claim_out.get("messages", [])
-    show_new_ai_messages(prev_len, final_messages)
+    show_new_ai_messages(final_messages)
 
     # did the graph explicitly say “I’m waiting for the user”?
     awaiting = claim_out.get("awaiting_user", False)
@@ -192,19 +177,20 @@ elif not st.session_state.source_done:
             "match": False,
             "explanation": None,
             "awaiting_user": False,
-
+            "next_node": None,
         }
     else:
         st.session_state.source_state["messages"].append(HumanMessage(content=prompt))
 
-    prev_len = len(st.session_state.source_state["messages"])
-
+    # run source graph 
     source_out = source_flow.invoke(st.session_state.source_state)
     st.session_state.source_state = source_out
 
+    # show only messages produced in THIS turn
     final_messages = source_out.get("messages", [])
-    show_new_ai_messages(prev_len, final_messages)
+    show_new_ai_messages(final_messages)
 
+    # did the graph explicitly say “I’m waiting for the user”?
     awaiting = source_out.get("awaiting_user", False)
 
     # mark source done only if not waiting AND we have results / source

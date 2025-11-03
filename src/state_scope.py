@@ -23,6 +23,7 @@ class AgentStateClaim(MessagesState):
     summary: Optional[str]
     awaiting_user: bool
     explanation: Optional[str]
+    next_node: Optional[str]
 
 class AgentStateSource(TypedDict):
     messages: Annotated[List[BaseMessage], add_messages]
@@ -42,6 +43,7 @@ class AgentStateSource(TypedDict):
     match: Optional[bool]
     explanation: Optional[str]
     awaiting_user: bool
+    next_node: Optional[str]
 
 #output models for structured output
 class SubjectResult(BaseModel):
