@@ -1,8 +1,9 @@
 
 """ State Definitions and Pydantic Schemas for testing if a claim is checkable. """
 
-from typing_extensions import Annotated, Literal, List, Optional
+from typing_extensions import TypedDict, Annotated, Sequence, Literal, List, Optional
 from langchain_core.messages import BaseMessage
+from langchain_core.output_parsers import PydanticOutputParser
 from pydantic import BaseModel, Field
 from operator import add as add_messages
 from langgraph.graph.message import MessagesState
@@ -23,14 +24,26 @@ class AgentStateClaim(MessagesState):
     awaiting_user: bool
     explanation: Optional[str]
     next_node: Optional[str]
+
+class AgentStateSource(TypedDict):
+    messages: Annotated[List[BaseMessage], add_messages]
+    claim: str 
+    checkable: Optional[bool]
+    subject: Optional[str]
+    confirmed: bool
     search_queries:  List[str] = Field(default_factory=list)
     tavily_context: Optional[str]
     research_focus: Optional[str]
     research_results: List[str] = Field(default_factory=list)
+    alerts: List[str] = Field(default_factory=list)
+    summary: Optional[str]
     claim_url: Optional[str]
     claim_source: Optional[str]
     primary_source: Optional[bool]
     match: Optional[bool]
+    explanation: Optional[str]
+    awaiting_user: bool
+    next_node: Optional[str]
 
 #output models for structured output
 class SubjectResult(BaseModel):
