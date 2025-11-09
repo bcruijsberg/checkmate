@@ -13,7 +13,7 @@ class AgentStateClaim(MessagesState):
     claim: str 
     checkable: Optional[bool]
     subject: Optional[str]
-    quantitative: Optional[bool]
+    quantitative: Optional[str]
     precision: Optional[str]
     based_on: Optional[str]
     confirmed: bool
@@ -40,7 +40,7 @@ class SubjectResult(BaseModel):
 
 class MoreInfoResult(BaseModel):
     subject: str = Field("", description="The subject of the claim")
-    quantitative: bool = Field(False, description="Is the claim quantitative?")
+    quantitative: str = Field("", description="Is the claim quantitative?")
     precision: str = Field("", description="How precise is it?")
     based_on: str = Field("", description="how was the data collected or derived?")
     question: str = Field("", description="Question to user for clarification if needed")
@@ -50,7 +50,7 @@ class SummaryResult(BaseModel):
     summary: str = Field("", description="A concise summary of the claim")
     question: str = Field("", description="Question to user for verification")
     subject: str = Field("", description="The subject of the claim")
-    quantitative: bool = Field(False, description="Is the claim quantitative?")
+    quantitative: str = Field("", description="Is the claim quantitative?")
     precision: str = Field("", description="How precise is it?")
     based_on: str = Field("", description="how was the data collected or derived?")
     question: str = Field("", description="Question to user for clarification if needed")
@@ -62,7 +62,7 @@ class ConfirmationResult(BaseModel):
 class ConfirmationFinalResult(BaseModel):
     confirmed: bool = Field(False, description="Whether the user confirmed the claim as checkable")
     subject: str = Field("", description="The subject of the claim")
-    quantitative: bool = Field(False, description="Is the claim quantitative?")
+    quantitative: str = Field("", description="Is the claim quantitative?")
     precision: str = Field("", description="How precise is it?")
     based_on: str = Field("", description="how was the data collected or derived?")
     question: str = Field("", description="Question to user for clarification if needed")

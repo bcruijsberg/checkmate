@@ -69,8 +69,6 @@ def checkable_fact(state: AgentStateClaim) -> Command[Literal["checkable_confirm
         f"- Checkable: `{result.checkable}`\n"
         f"- Reason: {result.explanation}\n"
     )
-    if result.question:
-        explanation_text += f"- Follow-up for you: {result.question}\n"
 
     ai_chat_msg = AIMessage(content=explanation_text)
 
@@ -98,7 +96,7 @@ def checkable_confirmation(state: AgentStateClaim) -> Command[Literal["retrieve_
 
     if state.get("awaiting_user"):
 
-        ask_msg = AIMessage(content="Does this look like a claim you want to fact-check? You can reply with 'yes' or 'no'.")
+        ask_msg = AIMessage(content=state.get("question", ""))
         return Command(
             goto="__end__", 
             update={
@@ -202,12 +200,11 @@ def retrieve_information(state: AgentStateClaim) -> Command[Literal["clarify_inf
     details_text = (
         "**Here’s what I extracted from your claim:**\n"
         f"- Subject: {result.subject or 'not clearly specified'}\n"
-        f"- Quantitative: {result.quantitative or 'no'}\n"
-        f"- Precision: {result.precision or 'not specified'}\n"
-        f"- Based on: {result.based_on or 'not specified'}\n"
+        f"- Quantitative: {result.quantitative}\n"
+        f"- Precision: {result.precision}\n"
+        f"- Based on: {result.based_on}\n"
     )
-    if result.question:
-        details_text += f"\n**Follow-up for you:** {result.question}\n"
+
     if result.alerts:
         details_text += "\n**Missing / to verify:**\n" + "\n".join(f"- {a}" for a in result.alerts)
 
@@ -240,7 +237,7 @@ def clarify_information(state: AgentStateClaim) -> Command[Literal["produce_summ
 
     if state.get("awaiting_user"):
 
-        ask_msg = AIMessage(content="If you have more details, could your provide them, and mention if you want to continue.")
+        ask_msg = AIMessage(content=state.get("question", ""))
         return Command(
             goto="__end__", 
             update={
@@ -382,7 +379,7 @@ def get_confirmation(state: AgentStateClaim) -> Command[Literal["produce_summary
 
     if state.get("awaiting_user"):
 
-        ask_msg = AIMessage(content="If you have more details, could your provide them, and mention if you want to continue.")
+        ask_msg = AIMessage(content=state.get("question", []))
         return Command(
             goto="__end__", 
             update={
