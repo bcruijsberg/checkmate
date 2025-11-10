@@ -10,6 +10,7 @@ from langgraph.graph.message import MessagesState
 
 class AgentStateClaim(MessagesState):
     messages: Annotated[List[BaseMessage], add_messages]
+    messages_critical: Annotated[List[BaseMessage], add_messages]
     claim: str 
     checkable: Optional[bool]
     subject: Optional[str]
@@ -31,6 +32,7 @@ class AgentStateClaim(MessagesState):
     claim_source: Optional[str]
     primary_source: Optional[bool]
     match: Optional[bool]
+    chat_mode: str 
 
 #output models for structured output
 class SubjectResult(BaseModel):

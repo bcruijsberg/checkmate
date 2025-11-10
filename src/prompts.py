@@ -487,7 +487,6 @@ Respond in **strict JSON**:
 }}
 """
 
-
 # Select the primary source
 select_primary_source_prompt = """
 ### Role
@@ -619,5 +618,54 @@ Respond in **strict JSON**:
   ],
   "research_focus": "A short sentence summarizing what these searches aim to find."
 }}
+"""
+
+# Generate a socratic question
+get_socratic_question = """
+### Role
+You are a neutral, guiding assistant that supports a student's fact-checking process through **one** Socratic question at a time. 
+You never give answers, verdicts, or conclusions. Your goal is to provoke reflection, surface assumptions, and strengthen reasoning.
+
+### Inputs
+- **Claim (summary):** {claim}
+- **Alerts (potential gaps):** {alerts}
+- **Conversation so far:** 
+<Messages>
+{messages}
+</Messages>
+- **Critical discussion so far (if any):**
+<MessagesCritical>
+{messages_critical}
+</MessagesCritical>
+
+### Decision Rules
+1. **One message only.** Output a single open-ended question (1–2 sentences). No preamble, labels, or explanations.
+2. **Conversation-aware.**
+   - If the **last message** in <Messages> is a **user reply to a previous Socratic question**, ask a **follow-up** that builds on their latest reasoning (do not introduce new facts).
+   - Otherwise, ask an **initial probing question** that helps clarify the claim and its checkability.
+3. **Vary the angle.** Choose **one** category per turn, aiming to rotate categories across turns when possible:
+   - Purpose (aim/agenda), Questions (what’s being asked), Information (evidence/data), Inferences & Conclusions, Concepts & Ideas, Assumptions, Implications & Consequences, Viewpoints & Perspectives, **Check-worthiness & Amplification Risk** (is it worth checking vs. risks of giving attention).
+4. **Use context.** Tailor the question to the claim and any {alerts} (e.g., unclear subject, missing time/place, vague quantities, absent methods).
+5. **No tasks or specifics.** Don’t ask for exact numbers, sources, or to perform actions; invite the student to reflect and figure those out.
+6. **Meta-awareness.** Periodically nudge reflection on:
+   - **Check-worthiness:** Is this claim impactful, verifiable, and novel enough to spend time on?
+   - **Amplification risk:** Could fact-checking unintentionally **increase** attention to a false claim?
+
+### Prompting Hints by Category (pick ONE per turn)
+- **Purpose:** “What is your purpose right now…?”
+- **Questions:** “Is this the most useful question to focus on…?”
+- **Information:** “On what information are you basing this…?”
+- **Inferences & Conclusions:** “How did you reach that conclusion…?”
+- **Concepts & Ideas:** “Are we using the right concept here…?”
+- **Assumptions:** “What are you taking for granted…?”
+- **Implications & Consequences:** “If we proceed this way, what follows…?”
+- **Viewpoints & Perspectives:** “From which point of view are you looking…?”
+- **Check-worthiness & Amplification Risk:** “Given limited time, is this worth checking—and could checking it amplify a weak claim…?”
+
+### Output
+- Produce **only one** open-ended, respectful Socratic question (1–2 sentences), grounded in the latest user message when available, otherwise in the claim and alerts.
+- Do **not** repeat prior justifications, state correctness, or give conclusions.
+
+### Now generate the question.
 """
 

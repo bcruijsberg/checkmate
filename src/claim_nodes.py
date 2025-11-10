@@ -2,10 +2,34 @@
 """ All the nodes """
 
 from langchain_core.messages import BaseMessage,HumanMessage,AIMessage,get_buffer_string
-from prompts import checkable_check_prompt,confirmation_checkable_prompt, get_information_prompt, confirmation_clarification_prompt, get_summary_prompt, confirmation_check_prompt
-from prompts import retrieve_claims_prompt, match_check_prompt, identify_source_prompt, primary_source_prompt, select_primary_source_prompt, research_prompt
-from state_scope import AgentStateClaim, SubjectResult, MoreInfoResult, SummaryResult, ConfirmationResult,ConfirmationFinalResult
-from state_scope import ConfirmationMatch, GetSource, PrimarySourcePlan, PrimarySourceSelection, ResearchPlan
+from prompts import (
+    checkable_check_prompt,
+    confirmation_checkable_prompt,
+    get_information_prompt,
+    confirmation_clarification_prompt,
+    get_summary_prompt,
+    confirmation_check_prompt,
+    retrieve_claims_prompt,
+    match_check_prompt,
+    identify_source_prompt,
+    primary_source_prompt,
+    select_primary_source_prompt,
+    research_prompt,
+    get_socratic_question,
+)
+from state_scope import (
+    AgentStateClaim, 
+    SubjectResult, 
+    MoreInfoResult, 
+    SummaryResult, 
+    ConfirmationResult,
+    ConfirmationFinalResult,
+    ConfirmationMatch, 
+    GetSource, 
+    PrimarySourcePlan, 
+    PrimarySourceSelection, 
+    ResearchPlan
+)
 from typing_extensions import Literal, List
 from langgraph.graph import StateGraph, START, END
 from langgraph.graph.message import add_messages
@@ -20,11 +44,22 @@ MAX_HISTORY_MESSAGES = 6
 # ROUTER NODE
 # ───────────────────────────────────────────────────────────────────────
 def router(state: AgentStateClaim) -> Command[
-    Literal["checkable_fact","checkable_confirmation","retrieve_information",
-            "clarify_information","produce_summary","get_confirmation",
-            "claim_matching","match_or_continue","get_source",
-            "get_primary_source","locate_primary_source","select_primary_source",
-            "research_claim"]
+    Literal[
+        "checkable_fact",
+        "checkable_confirmation",
+        "retrieve_information",
+        "clarify_information",
+        "produce_summary",
+        "critical_question",
+        "critical_response",
+        "get_confirmation",
+        "claim_matching",
+        "match_or_continue",
+        "get_source",
+        "get_primary_source",
+        "locate_primary_source",
+        "select_primary_source",
+        "research_claim"]
 ]:
     """ Route to correct node, after user reply """
 
@@ -372,7 +407,7 @@ def produce_summary(state: AgentStateClaim) -> Command[Literal["get_confirmation
 # GET_CONFIRMATION NODE
 # ───────────────────────────────────────────────────────────────────────
    
-def get_confirmation(state: AgentStateClaim) -> Command[Literal["produce_summary", "claim_matching"]]:
+def get_confirmation(state: AgentStateClaim) -> Command[Literal["produce_summary", "critical_question"]]:
 
     """ Get confirmation from user on the gathered information."""
     print("doe it get here")
@@ -415,7 +450,7 @@ def get_confirmation(state: AgentStateClaim) -> Command[Literal["produce_summary
 
         if result.confirmed:
             return Command(
-                    goto="claim_matching", 
+                    goto="critical_question", 
                     update={
                         "confirmed": result.confirmed,
                         "subject": result.subject,
@@ -442,7 +477,88 @@ def get_confirmation(state: AgentStateClaim) -> Command[Literal["produce_summary
                         "next_node": None,
                     }
             )
-    
+
+# ───────────────────────────────────────────────────────────────────────
+# CRITICAL CLAIM QUESTION NODE
+# ───────────────────────────────────────────────────────────────────────
+
+def critical_question(state: AgentStateClaim) -> Command[Literal["critical_response"]]:
+
+    """ Ask a socratic question to make the user think about the consequences of a fact checking a claim """
+
+    # retrieve alerts and format to string for the prompt
+    alerts=state.get("alerts", [])
+    alerts_str= "\n".join(f"- {a}" for a in alerts)
+
+    # retrieve conversation history fact-check messages and critical messages
+    conversation_history = list(state.get("messages", []))
+    conversation_history_critical = list(state.get("messages_critical", []))
+
+    # Add the last messages into a string for the prompt
+    recent_messages = conversation_history[-MAX_HISTORY_MESSAGES:]  # tune this number
+    messages_str = get_buffer_string(recent_messages)
+    recent_messages_critical = conversation_history_critical[-MAX_HISTORY_MESSAGES:]  # tune this number
+    messages_critical_str = get_buffer_string(recent_messages_critical)
+
+    # Create a prompt
+    prompt  =  get_socratic_question.format(
+        claim=state.get("summary", ""),
+        alerts=alerts_str,
+        messages=messages_str,
+        messages_critical=messages_critical_str 
+    )
+
+    #invoke the LLM and store the output
+    result = llm.invoke([HumanMessage(content=prompt)])
+
+    question_text = result.content if hasattr(result, "content") else str(result)
+
+    # Goto next node and update State
+    return Command( 
+            goto="critical_response",
+            update={
+                "question": question_text,
+                "awaiting_user": True,
+            }
+    )       
+
+def critical_response(state: AgentStateClaim) -> Command[Literal["critical_question", "claim_matching"]]:
+
+    """ Make the user think about the consequences of fact checking a claim """
+
+    print("does it get here")
+
+    if state.get("awaiting_user"):
+
+        ask_msg = AIMessage(content=state.get("question", []))
+        return Command(
+            goto="__end__", 
+            update={
+                "messages_critical": [ask_msg],
+                "next_node": "critical_response",
+                "awaiting_user": False,
+            },
+        )
+    else:
+        # retrieve conversation history
+        conversation_history_critical = list(state.get("messages_critical", []))
+        user_answer = get_new_user_reply(conversation_history_critical)
+
+        if user_answer=="exit":
+            return Command(
+                    goto="claim_matching", 
+                    update={
+                        "next_node": None,
+                    }
+            )       
+        else:
+            return Command(
+                    goto="critical_question", 
+                    update={
+                        "next_node": None,
+                    }
+            )
+
 # ───────────────────────────────────────────────────────────────────────
 # CLAIM MATCHING NODE
 # ───────────────────────────────────────────────────────────────────────
