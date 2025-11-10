@@ -288,7 +288,7 @@ Respond in the following structured JSON format:
   "confirmed": true or false
   "summary": "Concise summary of the claim, its characteristics, and discussion so far.",
   "subject": "subject text" or "unclear",
-  "quantitative": true or false,
+  "quantitative": "true" or "false", and a short explanation,
   "precision": "precise" or "vague" or "absolute (100%)" or "",
   "based_on": "methodology" or "unclear",
   "question": "one clarifying or confirmation question",

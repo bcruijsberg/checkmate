@@ -74,8 +74,6 @@ def checkable_fact(state: AgentStateClaim) -> Command[Literal["checkable_confirm
 
     """ Check if a claim is potentially checkable. """
 
-    print(f"this is the state: {state.get('next_node')}")
-
     #Retrieve conversation history
     conversation_history = list(state.get("messages", []))
 
@@ -127,7 +125,6 @@ def checkable_fact(state: AgentStateClaim) -> Command[Literal["checkable_confirm
 def checkable_confirmation(state: AgentStateClaim) -> Command[Literal["retrieve_information","__end__","checkable_fact"]]:
     
     """ Get confirmation from user on the gathered information. """
-    print("confirm check")
 
     if state.get("awaiting_user"):
 
@@ -210,7 +207,6 @@ def checkable_confirmation(state: AgentStateClaim) -> Command[Literal["retrieve_
 def retrieve_information(state: AgentStateClaim) -> Command[Literal["clarify_information"]]:
 
     """ Gather more information about a potentially checkable claim. """
-    print("info")
 
     #Retrieve conversation history
     conversation_history = list(state.get("messages", []))
@@ -268,7 +264,6 @@ def retrieve_information(state: AgentStateClaim) -> Command[Literal["clarify_inf
 def clarify_information(state: AgentStateClaim) -> Command[Literal["produce_summary", "retrieve_information"]]:
 
     """ Get confirmation from user on the gathered information. """
-    print("clarify ")
 
     if state.get("awaiting_user"):
 
@@ -348,7 +343,6 @@ def clarify_information(state: AgentStateClaim) -> Command[Literal["produce_summ
 def produce_summary(state: AgentStateClaim) -> Command[Literal["get_confirmation"]]:
 
     """ Get a summary on the gathered information. """
-    print("summary  ")
 
     # retrieve alerts and format to string for the prompt
     alerts=state.get("alerts", [])
@@ -410,7 +404,6 @@ def produce_summary(state: AgentStateClaim) -> Command[Literal["get_confirmation
 def get_confirmation(state: AgentStateClaim) -> Command[Literal["produce_summary", "critical_question"]]:
 
     """ Get confirmation from user on the gathered information."""
-    print("doe it get here")
 
     if state.get("awaiting_user"):
 
@@ -460,6 +453,7 @@ def get_confirmation(state: AgentStateClaim) -> Command[Literal["produce_summary
                         "question": result.question,
                         "alerts": result.alerts or [],
                         "messages": [ai_chat_msg],
+                        "chat_mode":"critical",
                         "next_node": None,
                     }
             )       
@@ -526,7 +520,7 @@ def critical_response(state: AgentStateClaim) -> Command[Literal["critical_quest
 
     """ Make the user think about the consequences of fact checking a claim """
 
-    print("does it get here")
+    print(f"does lkjlkjl it get here{state.get("chat_mode", [])}")
 
     if state.get("awaiting_user"):
 
@@ -548,6 +542,7 @@ def critical_response(state: AgentStateClaim) -> Command[Literal["critical_quest
             return Command(
                     goto="claim_matching", 
                     update={
+                        "chat_mode":"fact-check",
                         "next_node": None,
                     }
             )       
@@ -566,8 +561,7 @@ def critical_response(state: AgentStateClaim) -> Command[Literal["critical_quest
 def claim_matching(state: AgentStateClaim) -> Command[Literal["match_or_continue"]]:
 
     """ Call the retriever tool iteratively to find if similar claims have already been researched. """
-    print(f"matching {state.get('next node')} en {state.get('awaiting_user')}")
-   
+
     # retrieve conversation history
     conversation_history = list(state.get("messages", []))
 
@@ -631,7 +625,6 @@ def claim_matching(state: AgentStateClaim) -> Command[Literal["match_or_continue
 def match_or_continue(state: AgentStateClaim) -> Command[Literal["get_source", "__end__"]]:
 
     """ Decide whether to continue researching or end the process if a matching claim was found."""
-    print("match continue")
 
     print(f"hier match and continue{state.get("next_node")} en {state.get("awaiting_user")}")
     if state.get("awaiting_user"):
@@ -719,7 +712,6 @@ def match_or_continue(state: AgentStateClaim) -> Command[Literal["get_source", "
 def get_source(state: AgentStateClaim) -> Command[Literal["get_primary_source"]]:
 
     """ Ask the user for the  source of the claim if no match was found."""
-    print(f"get_source {state.get("next_node")}")
 
     if state.get("awaiting_user"):
 
@@ -789,7 +781,6 @@ def get_source(state: AgentStateClaim) -> Command[Literal["get_primary_source"]]
 def get_primary_source(state: AgentStateClaim) -> Command[Literal["research_claim","locate_primary_source"]]:
 
     """ Ask the user for the original primary source of the claim, and more background on the source """
-    print(f"get_primary_source {state.get("next_node")}")
 
     if state.get("awaiting_user"):
 
@@ -886,7 +877,6 @@ from langgraph.types import Command
 def locate_primary_source(state: AgentStateClaim) -> Command[Literal["select_primary_source"]]:
 
     """Run Tavily for each prepared query and store all results."""
-    print(f"locate primary_source {state.get('next_node')}")
 
     search_queries = state.get("search_queries", []) or []
 
@@ -975,7 +965,6 @@ def locate_primary_source(state: AgentStateClaim) -> Command[Literal["select_pri
 def select_primary_source(state: AgentStateClaim) -> Command[Literal["research_claim"]]:
 
     """ pick the best / most likely primary source. """
-    print(f"select primary_source {state.get("next_node")}")
 
     if state.get("awaiting_user"):
 
@@ -1066,7 +1055,6 @@ MAX_HISTORY_MESSAGES = 6
 def research_claim(state: AgentStateClaim) -> Command[Literal["__end__"]]:
 
     """Create research queries and run tavily_search for each query."""
-    print(f"research {state.get("next_node")}")
 
     # Get the context and conversation history
     conversation_history = list(state.get("messages", []))

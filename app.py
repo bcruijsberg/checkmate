@@ -57,7 +57,7 @@ claim.add_edge(START, "router")
 claim.add_edge("checkable_fact", "checkable_confirmation")
 claim.add_edge("retrieve_information", "clarify_information")
 claim.add_edge("produce_summary", "get_confirmation")
-claim.add_edge("get_confirmation", "critical_question")
+#claim.add_edge("get_confirmation", "critical_question")
 claim.add_edge("claim_matching", "match_or_continue")
 claim.add_edge("locate_primary_source", "select_primary_source")
 claim.add_edge("research_claim", END)
@@ -117,6 +117,7 @@ if "claim_state" not in st.session_state:
 if "claim_done" not in st.session_state:
     st.session_state.claim_done = False
 
+print(st.session_state.claim_state["chat_mode"])
 # check if we are in fact-check mode or critical mode 
 if st.session_state.claim_state["chat_mode"]=="fact-check":
 
