@@ -32,6 +32,8 @@ from claim_nodes import (
 )
 from langgraph.graph import StateGraph, START, END
 from state_scope import AgentStateClaim
+from langchain_core.messages import HumanMessage,AIMessage
+import streamlit as st
 
 claim = StateGraph(AgentStateClaim)
 
@@ -64,45 +66,71 @@ claim.add_edge("research_claim", END)
 
 claim_flow = claim.compile()
 
+def flush_new_ai_messages():
+    """Render any new AI messages produced by the graph since last UI cursor."""
+    claim_state = st.session_state.claim_state
+    final_messages = claim_state.get("messages", [])
+    start_idx = st.session_state.graph_cursor
+
+    for m in final_messages[start_idx:]:
+        if isinstance(m, AIMessage):
+            st.session_state.messages.append({"role": "assistant", "content": m.content})
+            with st.chat_message("assistant"):
+                st.write(m.content)
+
+    # Update cursor so we don't re-render old messages
+    st.session_state.graph_cursor = len(final_messages)
+
 # Modal chat window for critical thinking
 @st.dialog("Critical Thinking Chat", width="large")
 def critical_chat_modal():
-    st.caption(
-        "Socratic helper — keeps you doing the thinking. "
-        "It will nudge with open questions instead of giving answers."
-    )
+    st.caption("Socratic helper — keeps you doing the thinking. "
+               "It will nudge with open questions instead of giving answers.")
 
-    # chat history for the modal
-    if "messages_critical" not in st.session_state:
+    # Seed UI history only if empty
+    if not st.session_state.get("messages_critical"):
         st.session_state.messages_critical = [
-            {"role": "assistant", "content": "What's the core claim you’re examining?"}
+            {"role": "assistant", "content": st.session_state.claim_state.get("question", "")}
         ]
 
-    # render history
+    # Render history
     for m in st.session_state.messages_critical:
         with st.chat_message(m["role"]):
             st.write(m["content"])
 
-    # chat input inside the modal
+    # Close & continue -> send 'exit' to the graph and jump immediately
+    if st.button("Close & continue"):
+        st.session_state.claim_state.setdefault("messages_critical", [])
+        st.session_state.claim_state["messages_critical"].append(HumanMessage(content="exit"))
+        out = claim_flow.invoke(st.session_state.claim_state)
+        st.session_state.claim_state = out
+        st.rerun()  # modal closes; next run continues (critical_mode will be False)
+
+    # Chat input LAST so it stays at the bottom
     user_msg = st.chat_input("Type your reply...")
     if user_msg:
+        # Append to UI history
         st.session_state.messages_critical.append({"role": "user", "content": user_msg})
 
-        # 👉 replace this with your model call
-        socratic_nudge = (
-            "What assumption are you making here, and how could you test it "
-            "without relying on a single source?"
-        )
+        # Send to the graph to get the next question
+        #st.session_state.claim_state.setdefault("messages_critical", [])
+        st.session_state.claim_state["messages_critical"].append(HumanMessage(content=user_msg))
 
-        with st.chat_message("assistant"):
-            st.write(socratic_nudge)
-        st.session_state.messages_critical.append({"role": "assistant", "content": socratic_nudge})
+        out = claim_flow.invoke(st.session_state.claim_state)
+        st.session_state.claim_state = out
+
+        # # If the graph exited critical mode, close modal and continue
+        # if not out.get("critical_mode", False):
+        #     st.rerun()
+
+        # # Otherwise, show the next question
+        # next_q = out.get("question", "")
+        # st.session_state.messages_critical.append({"role": "assistant", "content": next_q})
+        st.rerun()  # re-render so the input returns to the bottom
+
 # ───────────────────────────────────────────────────────────────────────
 # STREAMLIT UI
 # ───────────────────────────────────────────────────────────────────────
-from langchain_core.messages import HumanMessage, AIMessage
-import streamlit as st
-
 st.set_page_config(page_title="CheckMate", page_icon="✅")
 st.title("🕵️ CheckMate – Claim checker")
 
@@ -142,7 +170,7 @@ if "claim_state" not in st.session_state:
         "claim_source": None,
         "primary_source": False,
         "match": False,
-        "chat_mode":"fact-check"
+        "critical_mode":False
     }
     st.session_state.graph_cursor = 0
 
@@ -150,62 +178,65 @@ if "claim_state" not in st.session_state:
 if "claim_done" not in st.session_state:
     st.session_state.claim_done = False
 
-print(st.session_state.claim_state["chat_mode"])
-# check if we are in fact-check mode or critical mode 
-if st.session_state.claim_state["chat_mode"]=="fact-check":
+# ---- Critical mode gate (runs before main chat) ----
+if st.session_state.claim_state.get("critical_mode", False):
+    # seed only if empty (avoid repeating the same question)
+    if not st.session_state.get("messages_critical"):
+        st.session_state.messages_critical = [
+            {"role": "assistant",
+             "content": st.session_state.claim_state.get("question", "")}
+        ]
+    critical_chat_modal()
+    st.stop()  # don't render the main chat on this run
 
-    # ───────────────────────────────────────────────────────────────────────
-    # Fact Check mode
-    # ───────────────────────────────────────────────────────────────────────
+if st.session_state.get("skip_input_once"):
+    flush_new_ai_messages()
+    st.session_state["skip_input_once"] = False
+    st.stop()
+# ───────────────────────────────────────────────────────────────────────
+# Fact Check mode
+# ───────────────────────────────────────────────────────────────────────
 
-    # Render full chat history every run
-    for m in st.session_state.messages:
-        with st.chat_message(m["role"]):
-            st.write(m["content"])
+# Render full chat history every run
+for m in st.session_state.messages:
+    with st.chat_message(m["role"]):
+        st.write(m["content"])
 
-    # Get user input
-    prompt = st.chat_input("")
+# Get user input
+prompt = st.chat_input("")
 
-    if not prompt:
-        # No new input; just show what we rendered above and exit this run
-        st.stop()
+if not prompt:
+    # No new input; just show what we rendered above and exit this run
+    st.stop()
 
-    # Show and store the new user message
-    with st.chat_message("user"):
-        st.write(prompt)
-    st.session_state.messages.append({"role": "user", "content": prompt})
+# Show and store the new user message
+with st.chat_message("user"):
+    st.write(prompt)
+st.session_state.messages.append({"role": "user", "content": prompt})
 
-    # At the first run, the user message is the claim
-    if st.session_state.claim_state["claim"] is None:
-        st.session_state.claim_state["claim"]=prompt
-        st.session_state.claim_state["messages"]=[HumanMessage(content=prompt)]
-    else:
-        #append the user message
-        st.session_state.claim_state["messages"].append(HumanMessage(content=prompt))
-        
-    # Run graph
-    claim_out = claim_flow.invoke(st.session_state.claim_state)
-    st.session_state.claim_state = claim_out
-
-    # Append any new AI messages to history and render them now
-    final_messages = claim_out.get("messages", [])
-    start_idx = st.session_state.graph_cursor
-    for m in final_messages[start_idx:]:
-        if isinstance(m, AIMessage):
-            st.session_state.messages.append({"role": "assistant", "content": m.content})
-            with st.chat_message("assistant"):
-                st.write(m.content)
-
-    # Advance the cursor to the end of the graph message list
-    st.session_state.graph_cursor = len(final_messages)
-
-    # ── Bookkeeping flags (optional) ───────────────────────────────────────
-    awaiting = claim_out.get("awaiting_user", False)
-    if (not awaiting) and (
-        claim_out.get("research_results") is not None or claim_out.get("primary_source")
-    ):
-        st.session_state.claim_done = True
+# At the first run, the user message is the claim
+if st.session_state.claim_state["claim"] is None:
+    st.session_state.claim_state["claim"]=prompt
+    st.session_state.claim_state["messages"]=[HumanMessage(content=prompt)]
 else:
-    # ───────────────────────────────────────────────────────────────────────
-    # Critical mode
-    critical_chat_modal()  # pops up immediately
+    #append the user message
+    st.session_state.claim_state["messages"].append(HumanMessage(content=prompt))
+    
+# Run graph
+claim_out = claim_flow.invoke(st.session_state.claim_state)
+st.session_state.claim_state = claim_out
+
+# If we just switched to critical mode, pop the dialog now
+if claim_out.get("critical_mode", False):
+    critical_chat_modal()
+    st.stop()
+
+# Append any new AI messages to history and render them now
+flush_new_ai_messages()
+
+# ── Bookkeeping flags (optional) ───────────────────────────────────────
+awaiting = claim_out.get("awaiting_user", False)
+if (not awaiting) and (
+    claim_out.get("research_results") is not None or claim_out.get("primary_source")
+):
+    st.session_state.claim_done = True

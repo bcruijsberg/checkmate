@@ -525,12 +525,11 @@ def critical_response(state: AgentStateClaim) -> Command[Literal["critical_quest
         return Command(
             goto="__end__", 
             update={
-                "messages": [ask_msg], 
                 "messages_critical": [ask_msg],
                 "next_node": "critical_response",
                 "awaiting_user": False,
-                "chat_mode":"critical",
-            },
+                "critical_mode":True,
+            }, 
         )
     else:
         # retrieve conversation history
@@ -541,7 +540,7 @@ def critical_response(state: AgentStateClaim) -> Command[Literal["critical_quest
             return Command(
                     goto="claim_matching", 
                     update={
-                        "chat_mode":"fact-check",
+                        "critical_mode":False,
                         "next_node": None,
                     }
             )       
