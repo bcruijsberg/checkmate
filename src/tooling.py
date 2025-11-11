@@ -6,12 +6,12 @@ from tavily import TavilyClient
 import json
 from utils import format_docs
 from langchain_groq import ChatGroq
-#from langchain_ollama import ChatOllama
+from langchain_ollama import ChatOllama
 
 load_dotenv(".env", override=True)
 
 #  Load the LLM
-#llm = ChatOllama(model="qwen3:4b", temperature=0.1, base_url="http://localhost:11434")
+llm_tuned = ChatOllama(model="unsloth_llama_q4_k_m:latest", temperature=0.1, base_url="http://localhost:11434")
 llm = ChatGroq(model_name="qwen/qwen3-32b", temperature=0.1)
 
 # Load Tavily

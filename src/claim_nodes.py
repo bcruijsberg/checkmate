@@ -35,7 +35,7 @@ from langgraph.graph import StateGraph, START, END
 from langgraph.graph.message import add_messages
 from langgraph.types import Command
 from utils import get_new_user_reply
-from tooling import llm, llm_tools, tools_dict
+from tooling import llm, llm_tools, llm_tuned, tools_dict
 import json
 
 # Maximum number of messages to send to the prompt
@@ -453,7 +453,6 @@ def get_confirmation(state: AgentStateClaim) -> Command[Literal["produce_summary
                         "question": result.question,
                         "alerts": result.alerts or [],
                         "messages": [ai_chat_msg],
-                        "chat_mode":"critical",
                         "next_node": None,
                     }
             )       
@@ -505,7 +504,7 @@ def critical_question(state: AgentStateClaim) -> Command[Literal["critical_respo
     #invoke the LLM and store the output
     result = llm.invoke([HumanMessage(content=prompt)])
 
-    question_text = result.content if hasattr(result, "content") else str(result)
+    question_text = getattr(result, "content", str(result))
 
     # Goto next node and update State
     return Command( 
@@ -520,17 +519,17 @@ def critical_response(state: AgentStateClaim) -> Command[Literal["critical_quest
 
     """ Make the user think about the consequences of fact checking a claim """
 
-    print(f"does lkjlkjl it get here{state.get("chat_mode", [])}")
-
     if state.get("awaiting_user"):
-
+        print(f"question {state.get('question', [])}")
         ask_msg = AIMessage(content=state.get("question", []))
         return Command(
             goto="__end__", 
             update={
+                "messages": [ask_msg], 
                 "messages_critical": [ask_msg],
                 "next_node": "critical_response",
                 "awaiting_user": False,
+                "chat_mode":"critical",
             },
         )
     else:

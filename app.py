@@ -64,6 +64,39 @@ claim.add_edge("research_claim", END)
 
 claim_flow = claim.compile()
 
+# Modal chat window for critical thinking
+@st.dialog("Critical Thinking Chat", width="large")
+def critical_chat_modal():
+    st.caption(
+        "Socratic helper — keeps you doing the thinking. "
+        "It will nudge with open questions instead of giving answers."
+    )
+
+    # chat history for the modal
+    if "messages_critical" not in st.session_state:
+        st.session_state.messages_critical = [
+            {"role": "assistant", "content": "What's the core claim you’re examining?"}
+        ]
+
+    # render history
+    for m in st.session_state.messages_critical:
+        with st.chat_message(m["role"]):
+            st.write(m["content"])
+
+    # chat input inside the modal
+    user_msg = st.chat_input("Type your reply...")
+    if user_msg:
+        st.session_state.messages_critical.append({"role": "user", "content": user_msg})
+
+        # 👉 replace this with your model call
+        socratic_nudge = (
+            "What assumption are you making here, and how could you test it "
+            "without relying on a single source?"
+        )
+
+        with st.chat_message("assistant"):
+            st.write(socratic_nudge)
+        st.session_state.messages_critical.append({"role": "assistant", "content": socratic_nudge})
 # ───────────────────────────────────────────────────────────────────────
 # STREAMLIT UI
 # ───────────────────────────────────────────────────────────────────────
@@ -175,39 +208,4 @@ if st.session_state.claim_state["chat_mode"]=="fact-check":
 else:
     # ───────────────────────────────────────────────────────────────────────
     # Critical mode
-    # ───────────────────────────────────────────────────────────────────────
-    @st.dialog("Critical Thinking Chat", width="large")
-    def critical_chat_modal():
-        st.caption(
-            "Socratic helper — keeps you doing the thinking. "
-            "It will nudge with open questions instead of giving answers."
-        )
-
-        # chat history for the modal
-        if "messages_critical" not in st.session_state:
-            st.session_state.messages_critical = [
-                {"role": "assistant", "content": "What's the core claim you’re examining?"}
-            ]
-
-        # render history
-        for m in st.session_state.messages_critical:
-            with st.chat_message(m["role"]):
-                st.write(m["content"])
-
-        # chat input inside the modal
-        user_msg = st.chat_input("Type your reply...")
-        if user_msg:
-            st.session_state.messages_critical.append({"role": "user", "content": user_msg})
-
-            # 👉 replace this with your model call
-            socratic_nudge = (
-                "What assumption are you making here, and how could you test it "
-                "without relying on a single source?"
-            )
-
-            with st.chat_message("assistant"):
-                st.write(socratic_nudge)
-            st.session_state.messages_critical.append({"role": "assistant", "content": socratic_nudge})
-
-    # ---- Auto-open the modal on first load ----
-        critical_chat_modal()  # pops up immediately
+    critical_chat_modal()  # pops up immediately

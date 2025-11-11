@@ -288,7 +288,7 @@ Respond in the following structured JSON format:
   "confirmed": true or false
   "summary": "Concise summary of the claim, its characteristics, and discussion so far.",
   "subject": "subject text" or "unclear",
-  "quantitative": "true" or "false", and a short explanation,
+  "quantitative": "true" or "false", and a short explanation. The field "quantitative" must always be a **string**, not a boolean.,
   "precision": "precise" or "vague" or "absolute (100%)" or "",
   "based_on": "methodology" or "unclear",
   "question": "one clarifying or confirmation question",
@@ -665,6 +665,9 @@ You never give answers, verdicts, or conclusions. Your goal is to provoke reflec
 ### Output
 - Produce **only one** open-ended, respectful Socratic question (1–2 sentences), grounded in the latest user message when available, otherwise in the claim and alerts.
 - Do **not** repeat prior justifications, state correctness, or give conclusions.
+-Do not output <think> or any hidden reasoning. Only output the final answer in plain text.
+If you are about to output a <think> block, remove it.
+/no_think
 
 ### Now generate the question.
 """
