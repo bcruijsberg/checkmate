@@ -435,7 +435,7 @@ def get_confirmation(state: AgentStateClaim) -> Command[Literal["produce_summary
 
         # human-readable assistant message for the chat
         if result.confirmed:
-            confirm_text = "Your confirmation has been recorded. We'll close this check here."
+            confirm_text = "Do you want to continue? (Yes/ No)"
         else:
             confirm_text = "Let's revisit the summary and adjust it if needed."
 
@@ -516,11 +516,7 @@ def critical_question(state: AgentStateClaim) -> Command[Literal["critical_respo
     )       
 
 def critical_response(state: AgentStateClaim) -> Command[Literal["critical_question", "claim_matching"]]:
-
-    """ Make the user think about the consequences of fact checking a claim """
-
     if state.get("awaiting_user"):
-        print(f"question {state.get('question', [])}")
         ask_msg = AIMessage(content=state.get("question", []))
         return Command(
             goto="__end__", 
@@ -528,29 +524,31 @@ def critical_response(state: AgentStateClaim) -> Command[Literal["critical_quest
                 "messages_critical": [ask_msg],
                 "next_node": "critical_response",
                 "awaiting_user": False,
-                "critical_mode":True,
+                "critical_mode": True,   # 👈 show panel
             }, 
         )
     else:
-        # retrieve conversation history
         conversation_history_critical = list(state.get("messages_critical", []))
         user_answer = get_new_user_reply(conversation_history_critical)
 
-        if user_answer=="exit":
+        if user_answer == "exit":
+            transition_msg = AIMessage(
+                content="Let's continue with researching if the claim has already been researched. One moment please."
+            )
             return Command(
-                    goto="claim_matching", 
-                    update={
-                        "critical_mode":False,
-                        "next_node": None,
-                    }
-            )       
+                goto="claim_matching",
+                update={
+                    "critical_mode": False,  # 👈 hide panel
+                    "next_node": None,
+                    "messages": [transition_msg],
+                },
+            )
         else:
             return Command(
-                    goto="critical_question", 
-                    update={
-                        "next_node": None,
-                    }
+                goto="critical_question",
+                update={"next_node": None}
             )
+
 
 # ───────────────────────────────────────────────────────────────────────
 # CLAIM MATCHING NODE
@@ -608,13 +606,13 @@ def claim_matching(state: AgentStateClaim) -> Command[Literal["match_or_continue
     
     # Goto next node and update State
     return Command( 
-            goto="match_or_continue",
-            update={
-                "messages": [human] + [result],
-                "awaiting_user": True,
-                "next_node": "match_or_continue",
-            }
-    ) 
+        goto="match_or_continue",
+        update={
+            "messages": conversation_history + [human, result],
+            "awaiting_user": True,
+            "next_node": "match_or_continue",
+        }
+    )
 
 # ───────────────────────────────────────────────────────────────────────
 # MATCHED OR CONTUE RESEARCH NODE
@@ -626,8 +624,7 @@ def match_or_continue(state: AgentStateClaim) -> Command[Literal["get_source", "
 
     print(f"hier match and continue{state.get("next_node")} en {state.get("awaiting_user")}")
     if state.get("awaiting_user"):
-        print("number 1")
-        ask_msg = AIMessage(content="I found some possibly related or previously researched claims.\n. Do any of these match your claim? Or do you want to continue researching?")
+        ask_msg = AIMessage(content="Do any of these match your claim? Or do you want to continue researching as suggested?")
         return Command(
             goto="__end__", 
             update={
@@ -657,7 +654,7 @@ def match_or_continue(state: AgentStateClaim) -> Command[Literal["get_source", "
         #invoke the LLM and store the output
         result = structured_llm.invoke([HumanMessage(content=prompt)])
 
-        # human-readable assistant message for the chat
+        # # human-readable assistant message for the chat
         if result.match:
             ai_chat_msg = AIMessage(
                 content=(
@@ -675,11 +672,9 @@ def match_or_continue(state: AgentStateClaim) -> Command[Literal["get_source", "
             )
         
         # Goto next node and update State
-        print(result.match)
         if result.match:
-            print("Since this claim has already been researched, we will end the process here.")
             return Command(
-                    goto=END, 
+                    goto="__end__", 
                     update={
                         "match": result.match,
                         "explanation": result.explanation,
@@ -693,15 +688,11 @@ def match_or_continue(state: AgentStateClaim) -> Command[Literal["get_source", "
                     goto="get_source", 
                     update={
                         "explanation": result.explanation,
-                        "messages": [ai_chat_msg],  
+                      #  "messages": [ai_chat_msg],  
                         "awaiting_user": True,
                         "next_node": "get_source",
                     }
             )
-    # else:
-    #     return Command(
-    #                 goto="get_source", 
-    #             )
 
 # ───────────────────────────────────────────────────────────────────────
 # RETRIEVE SOURCE
@@ -889,7 +880,6 @@ def locate_primary_source(state: AgentStateClaim) -> Command[Literal["select_pri
         if tavily_tool is None:
             continue
 
-        print(f"\n-- locate_primary_source: running tavily_search for: {q} --")
         tool_output = tavily_tool.invoke({"query": q})
         tavily_results.append({"query": q, "result": tool_output})
 
@@ -901,7 +891,6 @@ def locate_primary_source(state: AgentStateClaim) -> Command[Literal["select_pri
                 tool_call_id=f"tavily-{hash(q)}",
             )
         )
-        print(new_msgs)
 
     # Build a short, readable AI message with a few top hits
     if tavily_results:
@@ -1087,7 +1076,6 @@ def research_claim(state: AgentStateClaim) -> Command[Literal["__end__"]]:
         if tavily_tool is None:
             continue
 
-        print(f"\n-- research_claim: running tavily_search for: {q} --")
         tool_output = tavily_tool.invoke({"query": q})
 
         research_results.append({"query": q, "result": tool_output})

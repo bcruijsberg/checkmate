@@ -68,8 +68,8 @@ claim_flow = claim.compile()
 
 def flush_new_ai_messages():
     """Render any new AI messages produced by the graph since last UI cursor."""
-    claim_state = st.session_state.claim_state
-    final_messages = claim_state.get("messages", [])
+
+    final_messages = st.session_state.claim_state.get("messages", [])
     start_idx = st.session_state.graph_cursor
 
     for m in final_messages[start_idx:]:
@@ -98,34 +98,18 @@ def critical_chat_modal():
         with st.chat_message(m["role"]):
             st.write(m["content"])
 
-    # Close & continue -> send 'exit' to the graph and jump immediately
-    if st.button("Close & continue"):
-        st.session_state.claim_state.setdefault("messages_critical", [])
-        st.session_state.claim_state["messages_critical"].append(HumanMessage(content="exit"))
-        out = claim_flow.invoke(st.session_state.claim_state)
-        st.session_state.claim_state = out
-        st.rerun()  # modal closes; next run continues (critical_mode will be False)
-
     # Chat input LAST so it stays at the bottom
     user_msg = st.chat_input("Type your reply...")
     if user_msg:
         # Append to UI history
         st.session_state.messages_critical.append({"role": "user", "content": user_msg})
 
-        # Send to the graph to get the next question
-        #st.session_state.claim_state.setdefault("messages_critical", [])
+        # Append the latest user reply
         st.session_state.claim_state["messages_critical"].append(HumanMessage(content=user_msg))
 
         out = claim_flow.invoke(st.session_state.claim_state)
         st.session_state.claim_state = out
 
-        # # If the graph exited critical mode, close modal and continue
-        # if not out.get("critical_mode", False):
-        #     st.rerun()
-
-        # # Otherwise, show the next question
-        # next_q = out.get("question", "")
-        # st.session_state.messages_critical.append({"role": "assistant", "content": next_q})
         st.rerun()  # re-render so the input returns to the bottom
 
 # ───────────────────────────────────────────────────────────────────────
@@ -178,16 +162,10 @@ if "claim_state" not in st.session_state:
 if "claim_done" not in st.session_state:
     st.session_state.claim_done = False
 
-# ---- Critical mode gate (runs before main chat) ----
+# As long as we're in critical mode, only show the modal
 if st.session_state.claim_state.get("critical_mode", False):
-    # seed only if empty (avoid repeating the same question)
-    if not st.session_state.get("messages_critical"):
-        st.session_state.messages_critical = [
-            {"role": "assistant",
-             "content": st.session_state.claim_state.get("question", "")}
-        ]
     critical_chat_modal()
-    st.stop()  # don't render the main chat on this run
+    st.stop()
 
 if st.session_state.get("skip_input_once"):
     flush_new_ai_messages()
@@ -216,23 +194,23 @@ st.session_state.messages.append({"role": "user", "content": prompt})
 
 # At the first run, the user message is the claim
 if st.session_state.claim_state["claim"] is None:
-    st.session_state.claim_state["claim"]=prompt
-    st.session_state.claim_state["messages"]=[HumanMessage(content=prompt)]
+    st.session_state.claim_state["claim"] = prompt
+    st.session_state.claim_state["messages"] = [HumanMessage(content=prompt)]
 else:
-    #append the user message
+    # append the user message
     st.session_state.claim_state["messages"].append(HumanMessage(content=prompt))
-    
+
 # Run graph
 claim_out = claim_flow.invoke(st.session_state.claim_state)
 st.session_state.claim_state = claim_out
 
-# If we just switched to critical mode, pop the dialog now
+# Append any new AI messages to history and render them now
+flush_new_ai_messages()
+
+# 👇 NEW: if we just switched into critical mode, open the modal *now*
 if claim_out.get("critical_mode", False):
     critical_chat_modal()
     st.stop()
-
-# Append any new AI messages to history and render them now
-flush_new_ai_messages()
 
 # ── Bookkeeping flags (optional) ───────────────────────────────────────
 awaiting = claim_out.get("awaiting_user", False)
