@@ -32,7 +32,7 @@ class AgentStateClaim(MessagesState):
     claim_source: Optional[str]
     primary_source: Optional[bool]
     match: Optional[bool]
-    critical_mode: bool
+#    critical_mode: bool
 
 #output models for structured output
 class SubjectResult(BaseModel):

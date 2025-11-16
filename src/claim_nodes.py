@@ -51,7 +51,6 @@ def router(state: AgentStateClaim) -> Command[
         "clarify_information",
         "produce_summary",
         "critical_question",
-        "critical_response",
         "get_confirmation",
         "claim_matching",
         "match_or_continue",
@@ -63,8 +62,77 @@ def router(state: AgentStateClaim) -> Command[
 ]:
     """ Route to correct node, after user reply """
 
-    nn = state.get("next_node")
-    return Command(goto=nn or "checkable_fact")
+    return Command(
+        goto=state.get("next_node") or "checkable_fact"
+        )
+
+# ───────────────────────────────────────────────────────────────────────
+# CRITICAL QUESTION NODE
+# ───────────────────────────────────────────────────────────────────────
+
+def critical_question(state: AgentStateClaim) -> Command[
+    Literal[
+        "checkable_fact",
+        "checkable_confirmation",
+        "retrieve_information",
+        "clarify_information",
+        "produce_summary",
+        "critical_question",
+        "get_confirmation",
+        "claim_matching",
+        "match_or_continue",
+        "get_source",
+        "get_primary_source",
+        "locate_primary_source",
+        "select_primary_source",
+        "research_claim"]
+]:
+
+    """ Ask a socratic question to make the user think about the consequences of a fact checking a claim """
+
+    # retrieve alerts and format to string for the prompt
+    alerts=state.get("alerts", [])
+    alerts_str= "\n".join(f"- {a}" for a in alerts)
+
+    # retrieve conversation history fact-check messages and critical messages
+    conversation_history = list(state.get("messages", []))
+    conversation_history_critical = list(state.get("messages_critical", []))
+
+    # Add the last messages into a string for the prompt
+    recent_messages = conversation_history[-MAX_HISTORY_MESSAGES:]
+    messages_str = get_buffer_string(recent_messages)
+    recent_messages_critical = conversation_history_critical[-MAX_HISTORY_MESSAGES:] 
+    messages_critical_str = get_buffer_string(recent_messages_critical)
+
+    # Create a prompt
+    prompt  =  get_socratic_question.format(
+        alerts=alerts_str,
+        messages=messages_str,
+        messages_critical=messages_critical_str 
+    )
+
+    #invoke the LLM and store the output
+    result = llm.invoke([HumanMessage(content=prompt)])
+
+    question_text = getattr(result, "content", str(result))
+
+    # # Goto next node and update State
+    # return Command( 
+    #         goto="claim_matching",
+    #         update={
+    #             "question": question_text,
+    #             "messages_critical": [AIMessage(content=question_text)],
+    #          }
+    # )  
+  
+    return Command(
+        goto=state.get("next_node"),
+            update={
+                "question": question_text,
+                "messages_critical": [AIMessage(content=question_text)],
+            }        
+    )
+
 
 # ───────────────────────────────────────────────────────────────────────
 # CHECKABLE_FACT NODE
@@ -453,7 +521,7 @@ def get_confirmation(state: AgentStateClaim) -> Command[Literal["produce_summary
                         "question": result.question,
                         "alerts": result.alerts or [],
                         "messages": [ai_chat_msg],
-                        "next_node": None,
+                        "next_node": "claim_matching",
                     }
             )       
         else:
@@ -470,85 +538,7 @@ def get_confirmation(state: AgentStateClaim) -> Command[Literal["produce_summary
                         "next_node": None,
                     }
             )
-
-# ───────────────────────────────────────────────────────────────────────
-# CRITICAL CLAIM QUESTION NODE
-# ───────────────────────────────────────────────────────────────────────
-
-def critical_question(state: AgentStateClaim) -> Command[Literal["critical_response"]]:
-
-    """ Ask a socratic question to make the user think about the consequences of a fact checking a claim """
-
-    # retrieve alerts and format to string for the prompt
-    alerts=state.get("alerts", [])
-    alerts_str= "\n".join(f"- {a}" for a in alerts)
-
-    # retrieve conversation history fact-check messages and critical messages
-    conversation_history = list(state.get("messages", []))
-    conversation_history_critical = list(state.get("messages_critical", []))
-
-    # Add the last messages into a string for the prompt
-    recent_messages = conversation_history[-MAX_HISTORY_MESSAGES:]  # tune this number
-    messages_str = get_buffer_string(recent_messages)
-    recent_messages_critical = conversation_history_critical[-MAX_HISTORY_MESSAGES:]  # tune this number
-    messages_critical_str = get_buffer_string(recent_messages_critical)
-
-    # Create a prompt
-    prompt  =  get_socratic_question.format(
-        claim=state.get("summary", ""),
-        alerts=alerts_str,
-        messages=messages_str,
-        messages_critical=messages_critical_str 
-    )
-
-    #invoke the LLM and store the output
-    result = llm.invoke([HumanMessage(content=prompt)])
-
-    question_text = getattr(result, "content", str(result))
-
-    # Goto next node and update State
-    return Command( 
-            goto="critical_response",
-            update={
-                "question": question_text,
-                "awaiting_user": True,
-            }
-    )       
-
-def critical_response(state: AgentStateClaim) -> Command[Literal["critical_question", "claim_matching"]]:
-    if state.get("awaiting_user"):
-        ask_msg = AIMessage(content=state.get("question", []))
-        return Command(
-            goto="__end__", 
-            update={
-                "messages_critical": [ask_msg],
-                "next_node": "critical_response",
-                "awaiting_user": False,
-                "critical_mode": True,   # 👈 show panel
-            }, 
-        )
-    else:
-        conversation_history_critical = list(state.get("messages_critical", []))
-        user_answer = get_new_user_reply(conversation_history_critical)
-
-        if user_answer == "exit":
-            transition_msg = AIMessage(
-                content="Let's continue with researching if the claim has already been researched. One moment please."
-            )
-            return Command(
-                goto="claim_matching",
-                update={
-                    "critical_mode": False,  # 👈 hide panel
-                    "next_node": None,
-                    "messages": [transition_msg],
-                },
-            )
-        else:
-            return Command(
-                goto="critical_question",
-                update={"next_node": None}
-            )
-
+  
 
 # ───────────────────────────────────────────────────────────────────────
 # CLAIM MATCHING NODE
@@ -608,7 +598,7 @@ def claim_matching(state: AgentStateClaim) -> Command[Literal["match_or_continue
     return Command( 
         goto="match_or_continue",
         update={
-            "messages": conversation_history + [human, result],
+            "messages": [human, result],
             "awaiting_user": True,
             "next_node": "match_or_continue",
         }
