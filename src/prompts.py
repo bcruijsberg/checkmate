@@ -662,10 +662,14 @@ You never give answers, verdicts, or conclusions. Your goal is to provoke reflec
 - **Viewpoints & Perspectives:** “From which point of view are you looking…?”
 - **Check-worthiness & Amplification Risk:** “Given limited time, is this worth checking—and could checking it amplify a weak claim…?”
 
-### Output
-- You may think step by step internally.
-- But in your final answer, output ONLY the question text, and a SHORT explanation of your reasoning.
+Maintain a neutral and analytical tone.
 
+### Output Format
+Respond in **strict JSON**:
+{{
+  "critical_question": A critical question,
+  "reasoning_summary": A summary of the reasoning in a few lines
+}}
 
 ### Now generate the question.
 """

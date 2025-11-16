@@ -18,6 +18,7 @@ from prompts import (
     get_socratic_question,
 )
 from state_scope import (
+    CriticalQuestion,
     AgentStateClaim, 
     SubjectResult, 
     MoreInfoResult, 
@@ -99,10 +100,11 @@ def critical_question(state: AgentStateClaim) -> Command[
     conversation_history_critical = list(state.get("messages_critical", []))
 
     # Add the last messages into a string for the prompt
-    recent_messages = conversation_history[-MAX_HISTORY_MESSAGES:]
-    messages_str = get_buffer_string(recent_messages)
-    recent_messages_critical = conversation_history_critical[-MAX_HISTORY_MESSAGES:] 
-    messages_critical_str = get_buffer_string(recent_messages_critical)
+    messages_str = get_buffer_string(conversation_history[-MAX_HISTORY_MESSAGES:])
+    messages_critical_str = get_buffer_string(conversation_history_critical[-MAX_HISTORY_MESSAGES:] )
+
+    # Use structured output
+    structured_llm = llm.with_structured_output(CriticalQuestion, method="json_mode")
 
     # Create a prompt
     prompt  =  get_socratic_question.format(
@@ -112,24 +114,23 @@ def critical_question(state: AgentStateClaim) -> Command[
     )
 
     #invoke the LLM and store the output
-    result = llm.invoke([HumanMessage(content=prompt)])
+    result = structured_llm.invoke([HumanMessage(content=prompt)])
 
-    question_text = getattr(result, "content", str(result))
+    # human-readable assistant message for the chat
+    critical_question = (
+        f"- {result.critical_question}\n"
+        f"- {result.reasoning_summary}\n"
+    )
 
-    # # Goto next node and update State
-    # return Command( 
-    #         goto="claim_matching",
-    #         update={
-    #             "question": question_text,
-    #             "messages_critical": [AIMessage(content=question_text)],
-    #          }
-    # )  
+    ai_chat_msg = AIMessage(content=critical_question)
   
     return Command(
         goto=state.get("next_node"),
             update={
-                "question": question_text,
-                "messages_critical": [AIMessage(content=question_text)],
+                "critical_question": result.critical_question,
+                "reasoning_summary":result.reasoning_summary ,
+                "messages_critical": [ai_chat_msg],
+                "next_node": None
             }        
     )
 
@@ -175,14 +176,14 @@ def checkable_fact(state: AgentStateClaim) -> Command[Literal["checkable_confirm
 
     # Goto next node and update State
     return Command(
-        goto="checkable_confirmation", 
+        goto="critical_question",
         update={
             "question": result.question,
             "checkable": is_checkable,
             "explanation": result.explanation,
             "messages": [ai_chat_msg],
             "awaiting_user": True,
-            "next_node": None,
+            "next_node": "checkable_confirmation",
         }
     )
 
@@ -451,7 +452,7 @@ def produce_summary(state: AgentStateClaim) -> Command[Literal["get_confirmation
 
     # Goto next node and update State
     return Command( 
-            goto="get_confirmation",
+            goto="critical_question",
             update={
                 "summary": result.summary,
                 "question": result.question,
@@ -462,6 +463,7 @@ def produce_summary(state: AgentStateClaim) -> Command[Literal["get_confirmation
                 "based_on": result.based_on,
                 "alerts": result.alerts or [],
                 "awaiting_user": True,
+                "next_node": "get_confirmation",
             }
     )       
 
@@ -502,8 +504,8 @@ def get_confirmation(state: AgentStateClaim) -> Command[Literal["produce_summary
         result = structured_llm.invoke([HumanMessage(content=prompt)])
 
         # human-readable assistant message for the chat
-        if result.confirmed:
-            confirm_text = "Do you want to continue? (Yes/ No)"
+        if not result.confirmed:
+            confirm_text = "Let's check if this claim has already been researched"
         else:
             confirm_text = "Let's revisit the summary and adjust it if needed."
 
@@ -511,7 +513,7 @@ def get_confirmation(state: AgentStateClaim) -> Command[Literal["produce_summary
 
         if result.confirmed:
             return Command(
-                    goto="critical_question", 
+                    goto="claim_matching", 
                     update={
                         "confirmed": result.confirmed,
                         "subject": result.subject,
@@ -521,7 +523,6 @@ def get_confirmation(state: AgentStateClaim) -> Command[Literal["produce_summary
                         "question": result.question,
                         "alerts": result.alerts or [],
                         "messages": [ai_chat_msg],
-                        "next_node": "claim_matching",
                     }
             )       
         else:

@@ -32,7 +32,8 @@ class AgentStateClaim(MessagesState):
     claim_source: Optional[str]
     primary_source: Optional[bool]
     match: Optional[bool]
-#    critical_mode: bool
+    critical_question: Optional[str]
+    reasoning_summary: Optional[str]
 
 #output models for structured output
 class SubjectResult(BaseModel):
@@ -92,3 +93,7 @@ class PrimarySourceSelection(BaseModel):
 class ResearchPlan(BaseModel):
     research_queries: List[str] = Field([], description="Ordered list of search queries to run to gather evidence for the claim.")
     research_focus: str = Field("", description="What the research should focus on (e.g. fact checks, official statements, datasets).")
+
+class CriticalQuestion(BaseModel):
+    critical_question: str = Field("", description="A critical socratic question to stimulate critical thinking")
+    reasoning_summary: str = Field("", description="A summary of the reasoning done by the llm")

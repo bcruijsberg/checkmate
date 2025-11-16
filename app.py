@@ -74,10 +74,9 @@ claim.add_node("router", router)
 
 # Entry point
 claim.add_edge(START, "router")
-claim.add_edge("checkable_fact", "checkable_confirmation")
+claim.add_edge("checkable_fact", "critical_question")
 claim.add_edge("retrieve_information", "clarify_information")
-claim.add_edge("produce_summary", "get_confirmation")
-claim.add_edge("critical_question", "claim_matching")
+claim.add_edge("produce_summary", "critical_question")
 claim.add_edge("claim_matching", "match_or_continue")
 claim.add_edge("locate_primary_source", "select_primary_source")
 claim.add_edge("research_claim", END)
@@ -151,6 +150,8 @@ if "claim_state" not in st.session_state:
         "claim_source": None,
         "primary_source": False,
         "match": False,
+        "critical_question": None,
+        "reasoning_summary": None
     }
     st.session_state.graph_cursor = 0
 
