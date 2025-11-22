@@ -1,4 +1,4 @@
 #Installing torch depends on your specific CUDA version and system configuration.
---index-url https://download.pytorch.org/whl/cu126
-torch==2.9.0+cu126
-torchvision==0.24.0+cu126
+--index-url https://download.pytorch.org/whl/cu128
+torch==2.9.0+cu128
+torchvision==0.24.0+cu128
