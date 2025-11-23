@@ -6,20 +6,8 @@
 
 # your folders to ignore (add/remove as needed)
 faiss_index/
-Data/Dataset Socrates/
-llama.cpp/
-lora_model/
-outputs/
-model/
-unsloth_compiled_cache/
-_unsloth_sentencepiece_temp/
-_unsloth_temporary_saved_buffers/
 logging.txt
-Fact-check_chatbot.ipynb
-Fact-check_chatbot2.ipynb
-Fact-check_chatbot3.ipynb
-Fact-check_chatbot4.ipynb
-Fact-check_chatbot5.ipynb
+
 
 # editor/OS noise
 .vscode/
