@@ -15,7 +15,7 @@ from prompts import (
     primary_source_prompt,
     select_primary_source_prompt,
     research_prompt,
-    get_socratic_question,
+    get_socratic_question3,
 )
 from state_scope import (
     CriticalQuestion,
@@ -67,9 +67,112 @@ def router(state: AgentStateClaim) -> Command[
         goto=state.get("next_node") or "checkable_fact"
         )
 
-# ───────────────────────────────────────────────────────────────────────
-# CRITICAL QUESTION NODE
-# ───────────────────────────────────────────────────────────────────────
+# # ───────────────────────────────────────────────────────────────────────
+# # CRITICAL QUESTION NODE
+# # ───────────────────────────────────────────────────────────────────────
+
+# def critical_question(state: AgentStateClaim) -> Command[
+#     Literal[
+#         "checkable_fact",
+#         "checkable_confirmation",
+#         "retrieve_information",
+#         "clarify_information",
+#         "produce_summary",
+#         "critical_question",
+#         "get_confirmation",
+#         "claim_matching",
+#         "match_or_continue",
+#         "get_source",
+#         "get_primary_source",
+#         "locate_primary_source",
+#         "select_primary_source",
+#         "research_claim"]
+# ]:
+
+#     """ Ask a socratic question to make the user think about the consequences of a fact checking a claim """
+
+#     # retrieve alerts and format to string for the prompt
+#     alerts=state.get("alerts", [])
+#     alerts_str= "\n".join(f"- {a}" for a in alerts)
+
+#     # retrieve conversation history fact-check messages and critical messages
+#     conversation_history = list(state.get("messages", []))
+#     conversation_history_critical = list(state.get("messages_critical", []))
+
+#     # Add the last messages into a string for the prompt
+#     messages_str = get_buffer_string(conversation_history[-MAX_HISTORY_MESSAGES:])
+#     messages_critical_str = get_buffer_string(conversation_history_critical[-MAX_HISTORY_MESSAGES:] )
+
+#     # Use structured output
+#     structured_llm = llm.with_structured_output(CriticalQuestion, method="json_mode")
+
+#     # Create a prompt
+#     prompt  =  get_socratic_question.format(
+#         alerts=alerts_str,
+#         messages=messages_str,
+#         messages_critical=messages_critical_str 
+#     )
+
+#     #invoke the LLM and store the output
+#     result = structured_llm.invoke([HumanMessage(content=prompt)])
+
+#     # human-readable assistant message for the chat
+#     critical_question = (
+#         f"- {result.critical_question}\n"
+#         f"- {result.reasoning_summary}\n"
+#     )
+
+#     ai_chat_msg = AIMessage(content=critical_question)
+  
+#     return Command(
+#         goto=state.get("next_node"),
+#             update={
+#                 "critical_question": result.critical_question,
+#                 "reasoning_summary":result.reasoning_summary ,
+#                 "messages_critical": [ai_chat_msg],
+#                 "next_node": None
+#             }        
+#     )
+
+# def critical_question(state: AgentStateClaim) -> Command[
+#     Literal[
+#         "checkable_fact",
+#         "checkable_confirmation",
+#         "retrieve_information",
+#         "clarify_information",
+#         "produce_summary",
+#         "critical_question",
+#         "get_confirmation",
+#         "claim_matching",
+#         "match_or_continue",
+#         "get_source",
+#         "get_primary_source",
+#         "locate_primary_source",
+#         "select_primary_source",
+#         "research_claim"]
+# ]:
+
+#     """ Ask a socratic question to make the user think about the consequences of a fact checking a claim """
+
+#     # Create a prompt
+#     prompt  =  get_socratic_question2.format(
+#         claim=state.get("claim"),
+#         summary=state.get("summary"),
+#     )
+
+#     #invoke the LLM and store the output
+#     result = llm_tuned.invoke(prompt)
+
+#     ai_chat_msg = AIMessage(content=result.content)
+  
+#     return Command(
+#         goto=state.get("next_node"),
+#             update={
+#                 "critical_question": ai_chat_msg,
+#                 "messages_critical": [ai_chat_msg],
+#                 "next_node": None
+#             }        
+#     )
 
 def critical_question(state: AgentStateClaim) -> Command[
     Literal[
@@ -103,37 +206,26 @@ def critical_question(state: AgentStateClaim) -> Command[
     messages_str = get_buffer_string(conversation_history[-MAX_HISTORY_MESSAGES:])
     messages_critical_str = get_buffer_string(conversation_history_critical[-MAX_HISTORY_MESSAGES:] )
 
-    # Use structured output
-    structured_llm = llm.with_structured_output(CriticalQuestion, method="json_mode")
-
     # Create a prompt
-    prompt  =  get_socratic_question.format(
+    prompt  =  get_socratic_question3.format(
         alerts=alerts_str,
         messages=messages_str,
         messages_critical=messages_critical_str 
     )
 
     #invoke the LLM and store the output
-    result = structured_llm.invoke([HumanMessage(content=prompt)])
+    result = llm_tuned.invoke(prompt)
 
-    # human-readable assistant message for the chat
-    critical_question = (
-        f"- {result.critical_question}\n"
-        f"- {result.reasoning_summary}\n"
-    )
-
-    ai_chat_msg = AIMessage(content=critical_question)
+    ai_chat_msg = AIMessage(content=result.content)
   
     return Command(
         goto=state.get("next_node"),
             update={
-                "critical_question": result.critical_question,
-                "reasoning_summary":result.reasoning_summary ,
+                "critical_question": ai_chat_msg,
                 "messages_critical": [ai_chat_msg],
                 "next_node": None
             }        
     )
-
 
 # ───────────────────────────────────────────────────────────────────────
 # CHECKABLE_FACT NODE
