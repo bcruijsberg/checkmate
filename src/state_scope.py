@@ -25,6 +25,8 @@ class AgentStateClaim(MessagesState):
     awaiting_user: bool
     explanation: Optional[str]
     next_node: Optional[str]
+    tool_trace: Optional[str]
+    claim_matching_result: Optional[str]
     search_queries:  List[str] = Field(default_factory=list)
     tavily_context: Optional[str]
     research_focus: Optional[str]
@@ -108,7 +110,3 @@ class PrimarySourceSelection(BaseModel):
 class ResearchPlan(BaseModel):
     research_queries: List[str] = Field([], description="Ordered list of search queries to run to gather evidence for the claim.")
     research_focus: str = Field("", description="What the research should focus on (e.g. fact checks, official statements, datasets).")
-
-class CriticalQuestion(BaseModel):
-    critical_question: str = Field("", description="A critical socratic question to stimulate critical thinking")
-    reasoning_summary: str = Field("", description="A summary of the reasoning done by the llm")

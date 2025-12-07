@@ -11,6 +11,7 @@ from prompts import (
     confirmation_check_prompt,
     retrieve_claims_prompt,
     match_check_prompt,
+    structure_claim_prompt,
     identify_source_prompt,
     primary_source_prompt,
     select_primary_source_prompt,
@@ -18,14 +19,14 @@ from prompts import (
     get_socratic_question,
 )
 from state_scope import (
-    CriticalQuestion,
     AgentStateClaim, 
     SubjectResult, 
     MoreInfoResult, 
     SummaryResult, 
     ConfirmationResult,
     ConfirmationFinalResult,
-    ConfirmationMatch, 
+    ConfirmationMatch,
+    ClaimMatchingOutput,
     GetSource, 
     PrimarySourcePlan, 
     PrimarySourceSelection, 
@@ -96,11 +97,9 @@ def critical_question(state: AgentStateClaim) -> Command[
     alerts_str= "\n".join(f"- {a}" for a in alerts)
 
     # retrieve conversation history fact-check messages and critical messages
-    conversation_history = list(state.get("messages", []))
     conversation_history_critical = list(state.get("messages_critical", []))
 
     # Add the last messages into a string for the prompt
-    messages_str = get_buffer_string(conversation_history[-MAX_HISTORY_MESSAGES:])
     messages_critical_str = get_buffer_string(conversation_history_critical[-MAX_HISTORY_MESSAGES:] )
 
     # Create a prompt
@@ -137,8 +136,8 @@ def checkable_fact(state: AgentStateClaim) -> Command[Literal["checkable_confirm
     #Retrieve conversation history
     conversation_history = list(state.get("messages", []))
 
-    # Add the last message into a string for the prompt
-    recent_messages = conversation_history[-MAX_HISTORY_MESSAGES:]  # tune this number
+    # Add the last messages into a string for the prompt
+    recent_messages = conversation_history[-MAX_HISTORY_MESSAGES:] 
     messages_str = get_buffer_string(recent_messages)
 
     # Use structured output
@@ -274,7 +273,7 @@ def retrieve_information(state: AgentStateClaim) -> Command[Literal["clarify_inf
     #Retrieve conversation history
     conversation_history = list(state.get("messages", []))
 
-    # Add the last message into a string for the prompt
+    # Add the last messages into a string for the prompt
     recent_messages = conversation_history[-MAX_HISTORY_MESSAGES:]  # tune this number
     messages_str = get_buffer_string(recent_messages)
 
@@ -417,7 +416,7 @@ def produce_summary(state: AgentStateClaim) -> Command[Literal["get_confirmation
     # retrieve conversation history
     conversation_history = list(state.get("messages", []))
 
-    # Add the last message into a string for the prompt
+    # Add the last messages into a string for the prompt
     recent_messages = conversation_history[-MAX_HISTORY_MESSAGES:]  # tune this number
     messages_str = get_buffer_string(recent_messages)
 
@@ -604,10 +603,14 @@ def claim_matching(state: AgentStateClaim) -> Command[Literal["structure_claim_m
    
     """Call the retriever tool iteratively to find if similar claims have already been researched."""
 
+    #Retrieve conversation history
     conversation_history = list(state.get("messages", []))
+
+    # Add the last messages into a string for the prompt
     recent_messages = conversation_history[-MAX_HISTORY_MESSAGES:]
     messages_str = get_buffer_string(recent_messages)
 
+    # Prompt
     prompt = retrieve_claims_prompt.format(
         summary=state.get("summary", ""),
         subject=state.get("subject", ""),
@@ -653,7 +656,6 @@ def claim_matching(state: AgentStateClaim) -> Command[Literal["structure_claim_m
     return Command(
         goto="structure_claim_matching",   # <-- next node
         update={
-            "messages": [human, result],
             "tool_trace": tool_trace,      # <-- raw info for Node 2
             "awaiting_user": False,
         },
@@ -663,36 +665,63 @@ def structure_claim_matching(state: AgentStateClaim) -> Command[Literal["match_o
    
     """Take the raw retrieval trace and turn it into structured output."""
 
+    # Retrieve context
     summary = state.get("summary", "")
     subject = state.get("subject", "")
     tool_trace = state.get("tool_trace", [])
-    messages = state.get("messages", [])
 
-    # The last LLM message from Node 1 (optional, but sometimes useful)
-    last_result = messages[-1] if messages else None
+      # Use structured output
+    structured_llm = llm.with_structured_output(ClaimMatchingOutput, method="json_mode")
 
-    # Build a prompt that tells the model to fill the ClaimMatchingOutput schema
-    # You don't need to manually describe the schema; with_structured_output handles that.
-    prompt = (
-        "You are given a claim summary, a subject, and the retrieval trace of an earlier search "
-        "for similar existing claims. Based on this information, produce:\n"
-        "- The search batches (queries + reasoning) that would be appropriate\n"
-        "- Up to 5 top relevant existing claims (summary + allowed_url + alignment rationale)\n"
-        "- One reflective follow-up question for the student\n\n"
-        "You MUST fill the ClaimMatchingOutput schema you have been given.\n\n"
-        f"Claim summary:\n{summary}\n\n"
-        f"Subject:\n{subject}\n\n"
-        f"Retriever trace (tool calls and outputs):\n{tool_trace}\n\n"
-        f"Final model message from retrieval step (if any):\n{getattr(last_result, 'content', '')}\n"
+    # Create a prompt
+    prompt = structure_claim_prompt.format(
+        summary=state.get("summary", ""),
+        subject=state.get("subject", ""),
+        tool_trace=state.get("tool_trace", ""),
     )
 
     # This returns an instance of ClaimMatchingOutput already parsed
-    ClaimMatchingOutput = structured_llm.invoke(prompt)
+    result = structured_llm.invoke(prompt)
+ 
+    # Build a human-readable message for the chat UI
+    explanation_lines = []
+    explanation_lines.append("**Claim matching results**")
+    explanation_lines.append("")  # blank line
+
+    # Show the queries + reasoning
+    if result.queries:
+        explanation_lines.append("Here are the search questions that were used (or would be appropriate) to look for similar claims:")
+        for i, q in enumerate(result.queries, start=1):
+            explanation_lines.append(f"- **Q{i}:** {q.query}")
+            explanation_lines.append(f"  - Why this query: {q.reasoning}")
+        explanation_lines.append("")  # blank line
+
+    # Show the top claims
+    if result.top_claims:
+        explanation_lines.append("From the retrieved information, these existing claims might be relevant to what you're investigating:")
+        for i, c in enumerate(result.top_claims, start=1):
+            # URL line only if present
+            url_part = f"\n  - Source: {c.allowed_url}" if c.allowed_url else ""
+            explanation_lines.append(f"- **Claim {i}:** {c.short_summary}{url_part}")
+            explanation_lines.append(f"  - How it aligns or differs from your claim: {c.alignment_rationale}")
+        explanation_lines.append("")  # blank line
+    else:
+        explanation_lines.append("No strong matching existing claims were identified based on the retrieved information.")
+        explanation_lines.append("")  # blank line
+
+    # Add the reflective follow-up question
+    explanation_lines.append("**Next step for you**")
+    explanation_lines.append(result.follow_up_question)
+
+    explanation_text = "\n".join(explanation_lines)
+
+    ai_chat_msg = AIMessage(content=explanation_text)
 
     return Command(
         goto="match_or_continue",
         update={
-            "claim_matching_result": structured,  # you can also do structured.model_dump()
+            "messages": [ai_chat_msg],
+            "claim_matching_result": result, 
             "awaiting_user": True,
             "next_node": "match_or_continue",
         },
