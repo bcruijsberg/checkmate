@@ -64,6 +64,7 @@ claim.add_node("produce_summary", produce_summary)
 claim.add_node("get_confirmation", get_confirmation)
 claim.add_node("critical_question", critical_question)
 claim.add_node("claim_matching", claim_matching)
+claim.add_node("structure_claim_matching", structure_claim_matching)
 claim.add_node("match_or_continue", match_or_continue)
 claim.add_node("get_source", get_source)
 claim.add_node("get_primary_source", get_primary_source)
@@ -77,7 +78,8 @@ claim.add_edge(START, "router")
 claim.add_edge("checkable_fact", "critical_question")
 claim.add_edge("retrieve_information", "clarify_information")
 claim.add_edge("produce_summary", "critical_question")
-claim.add_edge("claim_matching", "match_or_continue")
+claim.add_edge("claim_matching", "structure_claim_matching")
+claim.add_edge("structure_claim_matching", "match_or_continue")
 claim.add_edge("locate_primary_source", "select_primary_source")
 claim.add_edge("research_claim", END)
 
@@ -131,6 +133,7 @@ if "claim_state" not in st.session_state:
         "messages_critical": [],
         "claim": None,
         "checkable": None,
+        "additional_context": None,
         "subject": None,
         "quantitative": None,
         "precision": None,

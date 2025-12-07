@@ -103,128 +103,28 @@ def critical_question(state: AgentStateClaim) -> Command[
     messages_str = get_buffer_string(conversation_history[-MAX_HISTORY_MESSAGES:])
     messages_critical_str = get_buffer_string(conversation_history_critical[-MAX_HISTORY_MESSAGES:] )
 
-    # Use structured output
-    structured_llm = llm.with_structured_output(CriticalQuestion, method="json_mode")
-
     # Create a prompt
     prompt  =  get_socratic_question.format(
         alerts=alerts_str,
-        messages=messages_str,
+        claim=state.get("claim"),
+        summary=state.get("summary"),
         messages_critical=messages_critical_str 
     )
 
     #invoke the LLM and store the output
-    result = structured_llm.invoke([HumanMessage(content=prompt)])
+    result = llm_tuned.invoke([HumanMessage(content=prompt)])
 
-    # human-readable assistant message for the chat
-    critical_question = (
-        f"- {result.critical_question}\n"
-    )
-
-    ai_chat_msg = AIMessage(content=critical_question)
+    ai_chat_msg = AIMessage(content=result.content)
   
     return Command(
         goto=state.get("next_node"),
             update={
-                "critical_question": result.critical_question,
-                "reasoning_summary":result.reasoning_summary ,
+                "critical_question": result.content,
                 "messages_critical": [ai_chat_msg],
                 "next_node": None
             }        
     )
 
-# def critical_question(state: AgentStateClaim) -> Command[
-#     Literal[
-#         "checkable_fact",
-#         "checkable_confirmation",
-#         "retrieve_information",
-#         "clarify_information",
-#         "produce_summary",
-#         "critical_question",
-#         "get_confirmation",
-#         "claim_matching",
-#         "match_or_continue",
-#         "get_source",
-#         "get_primary_source",
-#         "locate_primary_source",
-#         "select_primary_source",
-#         "research_claim"]
-# ]:
-
-#     """ Ask a socratic question to make the user think about the consequences of a fact checking a claim """
-
-#     # Create a prompt
-#     prompt  =  get_socratic_question2.format(
-#         claim=state.get("claim"),
-#         summary=state.get("summary"),
-#     )
-
-#     #invoke the LLM and store the output
-#     result = llm_tuned.invoke(prompt)
-
-#     ai_chat_msg = AIMessage(content=result.content)
-  
-#     return Command(
-#         goto=state.get("next_node"),
-#             update={
-#                 "critical_question": ai_chat_msg,
-#                 "messages_critical": [ai_chat_msg],
-#                 "next_node": None
-#             }        
-#     )
-
-# def critical_question(state: AgentStateClaim) -> Command[
-#     Literal[
-#         "checkable_fact",
-#         "checkable_confirmation",
-#         "retrieve_information",
-#         "clarify_information",
-#         "produce_summary",
-#         "critical_question",
-#         "get_confirmation",
-#         "claim_matching",
-#         "match_or_continue",
-#         "get_source",
-#         "get_primary_source",
-#         "locate_primary_source",
-#         "select_primary_source",
-#         "research_claim"]
-# ]:
-
-#     """ Ask a socratic question to make the user think about the consequences of a fact checking a claim """
-
-#     # retrieve alerts and format to string for the prompt
-#     alerts=state.get("alerts", [])
-#     alerts_str= "\n".join(f"- {a}" for a in alerts)
-
-#     # retrieve conversation history fact-check messages and critical messages
-#     conversation_history = list(state.get("messages", []))
-#     conversation_history_critical = list(state.get("messages_critical", []))
-
-#     # Add the last messages into a string for the prompt
-#     messages_str = get_buffer_string(conversation_history[-MAX_HISTORY_MESSAGES:])
-#     messages_critical_str = get_buffer_string(conversation_history_critical[-MAX_HISTORY_MESSAGES:] )
-
-#     # Create a prompt
-#     prompt  =  get_socratic_question3.format(
-#         alerts=alerts_str,
-#         messages=messages_str,
-#         messages_critical=messages_critical_str 
-#     )
-
-#     #invoke the LLM and store the output
-#     result = llm_tuned.invoke(prompt)
-
-#     ai_chat_msg = AIMessage(content=result.content)
-  
-#     return Command(
-#         goto=state.get("next_node"),
-#             update={
-#                 "critical_question": ai_chat_msg,
-#                 "messages_critical": [ai_chat_msg],
-#                 "next_node": None
-#             }        
-#     )
 
 # ───────────────────────────────────────────────────────────────────────
 # CHECKABLE_FACT NODE
@@ -247,6 +147,7 @@ def checkable_fact(state: AgentStateClaim) -> Command[Literal["checkable_confirm
     # Create a prompt
     prompt = checkable_check_prompt.format(
         claim=state.get("claim", ""),
+        additional_context=state.get("additional_context", ""),
         messages=messages_str,
     )
 
@@ -335,6 +236,7 @@ def checkable_confirmation(state: AgentStateClaim) -> Command[Literal["retrieve_
                             "confirmed": result.confirmed,
                             "messages": [ai_chat_msg],
                             "awaiting_user": False,
+                            "additional_context": None,
                             "next_node": None
                         }
                 )   
@@ -356,6 +258,7 @@ def checkable_confirmation(state: AgentStateClaim) -> Command[Literal["retrieve_
                     update={
                         "messages": [ai_chat_msg],
                         "awaiting_user": False,
+                        "additional_context": user_answer,
                         "next_node": None
                     }
             )
@@ -381,6 +284,7 @@ def retrieve_information(state: AgentStateClaim) -> Command[Literal["clarify_inf
     # Create a prompt
     prompt  =  get_information_prompt.format(
         claim=state.get("claim", ""),
+        additional_context=state.get("additional_context", ""),
         messages=messages_str,
     )
 
@@ -484,6 +388,7 @@ def clarify_information(state: AgentStateClaim) -> Command[Literal["produce_summ
                     update={
                         "confirmed": result.confirmed,
                         "messages": [ai_chat_msg],
+                        "additional_context": None,
                         "next_node": None,
                     }
             )       
@@ -492,6 +397,7 @@ def clarify_information(state: AgentStateClaim) -> Command[Literal["produce_summ
                     goto="retrieve_information", 
                     update={
                         "messages": [ai_chat_msg],
+                        "additional_context": user_answer,
                         "next_node": None,
                     }
             )
@@ -536,8 +442,6 @@ def produce_summary(state: AgentStateClaim) -> Command[Literal["get_confirmation
     summary_text = (
         f"**Summary of our findings so far:**\n\n{result.summary}\n\n"
     )
-    if result.question:
-        summary_text += f"**Next step / question:** {result.question}\n"
 
     ai_chat_msg = AIMessage(content=summary_text)
 
@@ -595,7 +499,7 @@ def get_confirmation(state: AgentStateClaim) -> Command[Literal["produce_summary
         result = structured_llm.invoke([HumanMessage(content=prompt)])
 
         # human-readable assistant message for the chat
-        if not result.confirmed:
+        if result.confirmed:
             confirm_text = "Let's check if this claim has already been researched"
         else:
             confirm_text = "Let's revisit the summary and adjust it if needed."
@@ -636,45 +540,103 @@ def get_confirmation(state: AgentStateClaim) -> Command[Literal["produce_summary
 # CLAIM MATCHING NODE
 # ───────────────────────────────────────────────────────────────────────
 
-def claim_matching(state: AgentStateClaim) -> Command[Literal["match_or_continue"]]:
+# def claim_matching(state: AgentStateClaim) -> Command[Literal["match_or_continue"]]:
 
-    """ Call the retriever tool iteratively to find if similar claims have already been researched. """
+#     """ Call the retriever tool iteratively to find if similar claims have already been researched. """
 
-    # retrieve conversation history
+#     # retrieve conversation history
+#     conversation_history = list(state.get("messages", []))
+
+#     # Add the last message into a string for the prompt
+#     recent_messages = conversation_history[-MAX_HISTORY_MESSAGES:]  # tune this number
+#     messages_str = get_buffer_string(recent_messages)
+
+#     #Create a prompt
+#     prompt = retrieve_claims_prompt.format(
+#         summary=state.get("summary", ""),
+#         subject=state.get("subject", ""),
+#         messages=messages_str,
+#     )
+
+#     # Start with a single HumanMessage
+#     human = HumanMessage(content=prompt)
+
+#     # First model call: only the prompt
+#     result = llm_tools.invoke([human])
+
+#     # Iterate tool calls
+#     while getattr(result, "tool_calls", None):
+
+#         # empty tool messages list to contain tool outputs
+#         tool_msgs: List[ToolMessage] = []
+
+#         # loop over each tool call
+#         for t in result.tool_calls:
+#             name = t["name"]
+#             args = t.get("args") or {}
+
+#             # invoke the tool
+#             out = tools_dict[name].invoke(args)
+
+#             # append tool output as ToolMessage
+#             tool_msgs.append(
+#                 ToolMessage(
+#                     tool_call_id=t["id"],
+#                     name=name,
+#                     content=str(out),
+#                 )
+#             )
+
+#         # Next model call, and decide if more tool calls are needed
+#         result = llm_tools.invoke([human, result, *tool_msgs])
+    
+#     # Goto next node and update State
+#     return Command( 
+#         goto="match_or_continue",
+#         update={
+#             "messages": [human, result],
+#             "awaiting_user": True,
+#             "next_node": "match_or_continue",
+#         }
+#     )
+
+def claim_matching(state: AgentStateClaim) -> Command[Literal["structure_claim_matching"]]:
+   
+    """Call the retriever tool iteratively to find if similar claims have already been researched."""
+
     conversation_history = list(state.get("messages", []))
-
-    # Add the last message into a string for the prompt
-    recent_messages = conversation_history[-MAX_HISTORY_MESSAGES:]  # tune this number
+    recent_messages = conversation_history[-MAX_HISTORY_MESSAGES:]
     messages_str = get_buffer_string(recent_messages)
 
-    #Create a prompt
     prompt = retrieve_claims_prompt.format(
         summary=state.get("summary", ""),
         subject=state.get("subject", ""),
         messages=messages_str,
     )
 
-    # Start with a single HumanMessage
     human = HumanMessage(content=prompt)
-
-    # First model call: only the prompt
     result = llm_tools.invoke([human])
 
-    # Iterate tool calls
-    while getattr(result, "tool_calls", None):
+    # Store tool call trace
+    tool_trace: list = [] 
 
-        # empty tool messages list to contain tool outputs
+    while getattr(result, "tool_calls", None):
         tool_msgs: List[ToolMessage] = []
 
-        # loop over each tool call
         for t in result.tool_calls:
             name = t["name"]
             args = t.get("args") or {}
-
-            # invoke the tool
             out = tools_dict[name].invoke(args)
 
-            # append tool output as ToolMessage
+            # Keep a simple trace for the next node
+            tool_trace.append(
+                {
+                    "tool_name": name,
+                    "args": args,
+                    "output": out,
+                }
+            )
+
             tool_msgs.append(
                 ToolMessage(
                     tool_call_id=t["id"],
@@ -683,18 +645,59 @@ def claim_matching(state: AgentStateClaim) -> Command[Literal["match_or_continue
                 )
             )
 
-        # Next model call, and decide if more tool calls are needed
         result = llm_tools.invoke([human, result, *tool_msgs])
-    
-    # Goto next node and update State
-    return Command( 
-        goto="match_or_continue",
+
+    # result is now the last LLM message after it stopped calling tools.
+    # The next node will turn this + tool_trace into structured output.
+
+    return Command(
+        goto="structure_claim_matching",   # <-- next node
         update={
             "messages": [human, result],
+            "tool_trace": tool_trace,      # <-- raw info for Node 2
+            "awaiting_user": False,
+        },
+    )
+
+def structure_claim_matching(state: AgentStateClaim) -> Command[Literal["match_or_continue"]]:
+   
+    """Take the raw retrieval trace and turn it into structured output."""
+
+    summary = state.get("summary", "")
+    subject = state.get("subject", "")
+    tool_trace = state.get("tool_trace", [])
+    messages = state.get("messages", [])
+
+    # The last LLM message from Node 1 (optional, but sometimes useful)
+    last_result = messages[-1] if messages else None
+
+    # Build a prompt that tells the model to fill the ClaimMatchingOutput schema
+    # You don't need to manually describe the schema; with_structured_output handles that.
+    prompt = (
+        "You are given a claim summary, a subject, and the retrieval trace of an earlier search "
+        "for similar existing claims. Based on this information, produce:\n"
+        "- The search batches (queries + reasoning) that would be appropriate\n"
+        "- Up to 5 top relevant existing claims (summary + allowed_url + alignment rationale)\n"
+        "- One reflective follow-up question for the student\n\n"
+        "You MUST fill the ClaimMatchingOutput schema you have been given.\n\n"
+        f"Claim summary:\n{summary}\n\n"
+        f"Subject:\n{subject}\n\n"
+        f"Retriever trace (tool calls and outputs):\n{tool_trace}\n\n"
+        f"Final model message from retrieval step (if any):\n{getattr(last_result, 'content', '')}\n"
+    )
+
+    # This returns an instance of ClaimMatchingOutput already parsed
+    ClaimMatchingOutput = structured_llm.invoke(prompt)
+
+    return Command(
+        goto="match_or_continue",
+        update={
+            "claim_matching_result": structured,  # you can also do structured.model_dump()
             "awaiting_user": True,
             "next_node": "match_or_continue",
-        }
+        },
     )
+
 
 # ───────────────────────────────────────────────────────────────────────
 # MATCHED OR CONTUE RESEARCH NODE

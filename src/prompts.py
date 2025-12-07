@@ -16,6 +16,9 @@ The messages that have been exchanged so far between yourself and the user are:
 ### Claim
 {claim}
 
+### Additional context
+{additional_context}
+
 Your first task is to classify the claim as one of:
 1. **Opinion** – expresses belief, attitude, judgment, or value (e.g., "I think the mayor is corrupt", "This policy is unfair").
 2. **Prediction** – makes a statement about a future event or uncertain outcome (e.g., "The economy will collapse next year").
@@ -26,7 +29,7 @@ Your first task is to classify the claim as one of:
 - **Facts** are **POTENTIALLY CHECKABLE** — they can be verified, but might need more clarification, this will be collected in the next steps.
 
 ### Steps
-1. Start with responding to the user's answer or additional context from the messages.
+1. If the user provided **Additional context** (if this is not None). Take this specifically into account when evaluating the claim.
 2. **Classify** the claim as *Opinion*, *Prediction*, or *Fact*.
 3. **Explain briefly** why it fits that category.
 4. **Formulate a polite verification question** to confirm this classification and explanation with the user before proceeding.
@@ -68,7 +71,7 @@ Below is the user's latest response:
 Determine whether the user’s response indicates that they **confirm** the summary as accurate or not.
 
 - If the user explicitly agrees (e.g., “Yes,” “That’s correct,” “Exactly,” “I agree,” etc.), mark **confirmed: true**. 
-- If the user indicates they want to move forward (e.g., uses words like “proceed,” “continue,” “next step”), set "confirmed": true.
+- If the user indicates they want to move forward (e.g., uses words like “proceed,” “continue,” “next step” “additional context is needed”), set "confirmed": true.
 - If the user agrees, but also adds new content, mark **confirmed: false**.  
 - If they express disagreement, uncertainty, or corrections, mark **confirmed: false**.
 
@@ -91,13 +94,16 @@ and you do not complete tasks for them. Avoid giving conclusions or definitive j
 
 In this step your are tasked with extracting detailed information about a claim to determine its checkability.
 
-The messages that have been exchanged so far between yourself and the user are:
+The messages that have been exchanged so far, take additional context provide by the user into account. Pay expecial attent to the last user response.
 <Messages>
 {messages}
 </Messages>
 
 ### Claim
 {claim}
+
+### Additional context
+{additional_context}
 
 ### Important Rules
 This part focuses on determining whether the subject is clear, the claim is quantitative, how precise it is, how the data was derived, 
@@ -106,13 +112,15 @@ You don't need to acquire all missing details right now; just identify what is m
 If the user says no more details are available, proceed with what you have.
 
 ### Steps
-1. Identify the subject. If unclear → "unclear".
-2. Determine if the claim is *quantitative*. Set *quantitative* to true/false.
-3. Assess precision: "precise", "vague", or "absolute (100%)". If qualitative, use "".
-4. Identify what the claim is *based on* (e.g., "survey …", "official statistics"). If none → "unclear".
-5. Briefly *explain your reasoning* (quote/phrase from the claim).
-6. Ask exactly one *clarifying/confirmation question* that would make the claim checkable.
-7. Identify *alerts/warnings*: unclear subject, qualitative claim, vague quantitative claim, geography missing, time period missing, methodological details absent. 
+1. If the user provided **Additional context** (if this is not None). Add this to one of these fields: subject, quantitative, precision, based_on, and skip steps 2 to 5.
+
+2. Identify the subject. If unclear → "unclear".
+3. Determine if the claim is *quantitative8*. Set *quantitative* to true/false.
+4. Assess precision: "precise", "vague", or "absolute (100%)". If qualitative, use "".
+5. Identify what the claim is *based on* (e.g., "survey …", "official statistics"). If none → "unclear".
+6. Briefly *explain your reasoning* and if *Additional context* is not None, specifically mention how you enriched the analysis with the additional content.
+7. Ask exactly one *clarifying/confirmation question* that would make the claim checkable.
+8. Identify *alerts/warnings*: unclear subject, qualitative claim, vague quantitative claim, geography missing, time period missing, methodological details absent. 
 Don't mention an alert when the information is present.
 
 Keep your tone neutral and analytical.
@@ -121,7 +129,7 @@ Keep your tone neutral and analytical.
 Respond in the following structured JSON format:
 {{
   "subject": "subject text" or "unclear",
-  "quantitative": "true" or "false", and a short explanation,
+  "quantitative": "quantitative" or "qualitative", and a short explanation,
   "precision": "precise" or "vague" or "absolute (100%)" or "", and a short explanation,
   "based_on": "methodology" or "unclear", and a short explanation,
   "question": "one open clarifying or confirmation question, don't ask for specific details, let the user figure this out",
@@ -132,7 +140,7 @@ Respond in the following structured JSON format:
 Example A (qualitative):
 {{
   "subject": "Spanish court sentencing of Catalan leaders (2019)",
-  "quantitative": "false, because there is no quantitive data", 
+  "quantitative": "qualitative, because there is no quantitive data", 
   "precision": "precise, because it refers to a specific legal event in a defined time and place",
   "based_on": "news reporting / legal documents, because the information is typically drawn from official court rulings and journalistic coverage",
   "question": "What is the main point you are trying to understand here?",
@@ -142,7 +150,7 @@ Example A (qualitative):
 Example B (quantitative but vague):
 {{
   "subject": "EU asylum applications",
-  "quantitative": "true, because it refers to measurable counts of applications",
+  "quantitative": "quantitative, because it refers to measurable counts of applications",
   "precision": "vague, because no time frame, comparison, or dataset is identified",
   "based_on": "unclear, because the data source could vary (Eurostat, UNHCR, national agencies, media summaries)",
   "question": "What do you think is important to clarify before evaluating this?",
@@ -319,14 +327,7 @@ Below is the summary previously generated about the claim and discussion:
 **subject**: {subject}
 
 ### Steps
-1. Before searching, extract from the Summary + Claim Information the following facets (use None if missing):
-  - **Subject** (What is being claimed),
-  - **Entities** (people/orgs/policies/objects),
-  - **Geography** (country/region/locality),
-  - **Timeframe** (date/period; resolve relative time if possible),
-   -**Quantities** (numbers, shares, rates, units; normalize synonyms like “one third” ≈ 33%),
-
-2. Call **retriever_tool** with focused queries in small batches (2–3 queries per batch). After each batch:
+1. Call **retriever_tool** with focused queries in small batches (2–3 queries per batch). After each batch:
   - Discard candidates that are **off-topic** relative to the extracted **subject*.
   - Keep only candidates whose **subject** overlaps strongly with the new claim. Require overlap on at least **3**: (entities, geography, timeframe or quantity).
   - Use retrieved CONTEXT and ALLOWED_URLS to decide if you need more queries.
@@ -337,7 +338,12 @@ Below is the summary previously generated about the claim and discussion:
   - Handle unit conversions if needed.
   - Treat paraphrases as equivalent if the **proposition** is unchanged.
 
-- Finalize: return the **top ≤5** most relevant existing claims with a one-sentence rationale and url from ALLOWED_URLS that references which facets align/differ.
+4. **Selection of final claims**
+   - From the filtered candidates, select at most 5 **most relevant** existing claims.
+   - For each, prepare:
+     - 1–2 sentence student-friendly summary of the claim.
+     - ALLOWED_URL that best represents that claim.
+     - A short rationale describing which facets align/differ.
 """
 
 # Check if a matching claim has been found based on the user's answer
@@ -623,119 +629,20 @@ Respond in **strict JSON**:
 # Generate a socratic question
 get_socratic_question = """
 ### Role
-You are a neutral, guiding assistant that supports a student's fact-checking process through **one** Socratic question at a time. 
-You never give answers, verdicts, or conclusions. Your goal is to provoke reflection, surface assumptions, and strengthen reasoning.
-
-### Inputs
-- **Alerts (potential gaps):** {alerts}
-
-<Messages>
-{messages}
-</Messages>
-
-- Critical questions so far (if any):
-<MessagesCritical>
-{messages_critical}
-</MessagesCritical>
-
-### Decision Rules
-1. **One message only.** Output a single open-ended question (1–2 sentences). No preamble, labels, or explanations.
-2. **Conversation-aware.**
-   - If the **last message** in <Messages> is a **user reply to a previous Socratic question**, ask a **follow-up** that builds on their latest reasoning (do not introduce new facts).
-   - Otherwise, ask an **initial probing question** that helps clarify the claim and its checkability.
-3. **Vary the angle.** Choose **one** category per turn, aiming to rotate categories across turns when possible:
-   - Purpose (aim/agenda), Questions (what’s being asked), Information (evidence/data), Inferences & Conclusions, Concepts & Ideas, Assumptions, Implications & Consequences, Viewpoints & Perspectives, **Check-worthiness & Amplification Risk** (is it worth checking vs. risks of giving attention).
-4. **Use context.** Tailor the question to the claim and any {alerts} (e.g., unclear subject, missing time/place, vague quantities, absent methods).
-5. **No tasks or specifics.** Don’t ask for exact numbers, sources, or to perform actions; invite the student to reflect and figure those out.
-6. **Meta-awareness.** Periodically nudge reflection on:
-   - **Check-worthiness:** Is this claim impactful, verifiable, and novel enough to spend time on?
-   - **Amplification risk:** Could fact-checking unintentionally **increase** attention to a false claim?
-
-### Prompting Hints by Category (pick ONE per turn)
-- **Purpose:** “What is your purpose right now…?”
-- **Questions:** “Is this the most useful question to focus on…?”
-- **Information:** “On what information are you basing this…?”
-- **Inferences & Conclusions:** “How did you reach that conclusion…?”
-- **Concepts & Ideas:** “Are we using the right concept here…?”
-- **Assumptions:** “What are you taking for granted…?”
-- **Implications & Consequences:** “If we proceed this way, what follows…?”
-- **Viewpoints & Perspectives:** “From which point of view are you looking…?”
-- **Check-worthiness & Amplification Risk:** “Given limited time, is this worth checking—and could checking it amplify a weak claim…?”
-
-Maintain a neutral and analytical tone.
-
-### Output Format
-Respond in **strict JSON**:
-{{
-  "critical_question": A critical question,
-  "reasoning_summary": A summary of the reasoning in a few lines
-}}
-
-### Now generate the question.
-"""
-
-
-# Generate a socratic question
-get_socratic_question2 = """
-### Role
-You are a neutral, guiding assistant that supports a student's fact-checking process through **one** Socratic question at a time. 
-You never give answers, verdicts, or conclusions. Your goal is to provoke reflection, surface assumptions, and strengthen reasoning.
+You are a neutral, guiding assistant that supports a student's fact-checking. 
+Your goal is to provoke reflection, surface assumptions, and strengthen reasoning.
+Generate a critical question, using the context below:
 
 ### Inputs
 - {claim}
 - {summary}
 
-### Now generate the question.
-"""
-
-get_socratic_question3 = """
-### Role
-You are a neutral, guiding assistant that supports a student's fact-checking process through **one** Socratic question at a time. 
-You never give answers, verdicts, or conclusions. Your goal is to provoke reflection, surface assumptions, and strengthen reasoning.
-
-### Inputs
-### Inputs
-- Claim: {claim}
-- Summary: {summary}
 - **Alerts (potential gaps):** {alerts}
 
 - Critical questions so far (if any):
 <History>
 {messages_critical}
 </History>
-
-### Decision Rules
-1. **One message only.** Output a single open-ended question (1–2 sentences). No preamble, labels, or explanations.
-2. **Conversation-aware.**
-   - If the **last message** in <Messages> is a **user reply to a previous Socratic question**, ask a **follow-up** that builds on their latest reasoning (do not introduce new facts).
-   - Otherwise, ask an **initial probing question** that helps clarify the claim and its checkability.
-3. **Vary the angle.** Choose **one** category per turn, aiming to rotate categories across turns when possible:
-   - Purpose (aim/agenda), Questions (what’s being asked), Information (evidence/data), Inferences & Conclusions, Concepts & Ideas, Assumptions, Implications & Consequences, Viewpoints & Perspectives, **Check-worthiness & Amplification Risk** (is it worth checking vs. risks of giving attention).
-4. **Use context.** Tailor the question to the claim and any {alerts} (e.g., unclear subject, missing time/place, vague quantities, absent methods).
-5. **No tasks or specifics.** Don’t ask for exact numbers, sources, or to perform actions; invite the student to reflect and figure those out.
-6. **Meta-awareness.** Periodically nudge reflection on:
-   - **Check-worthiness:** Is this claim impactful, verifiable, and novel enough to spend time on?
-   - **Amplification risk:** Could fact-checking unintentionally **increase** attention to a false claim?
-
-### Prompting Hints by Category (pick ONE per turn)
-- **Purpose:** “What is your purpose right now…?”
-- **Questions:** “Is this the most useful question to focus on…?”
-- **Information:** “On what information are you basing this…?”
-- **Inferences & Conclusions:** “How did you reach that conclusion…?”
-- **Concepts & Ideas:** “Are we using the right concept here…?”
-- **Assumptions:** “What are you taking for granted…?”
-- **Implications & Consequences:** “If we proceed this way, what follows…?”
-- **Viewpoints & Perspectives:** “From which point of view are you looking…?”
-- **Check-worthiness & Amplification Risk:** “Given limited time, is this worth checking—and could checking it amplify a weak claim…?”
-
-Maintain a neutral and analytical tone.
-
-### Output Format
-Respond in **strict JSON**:
-{{
-  "critical_question": A critical question,
-  "reasoning_summary": A summary of the reasoning in a few lines
-}}
 
 ### Now generate the question.
 """

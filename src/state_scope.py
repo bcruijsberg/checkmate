@@ -13,6 +13,7 @@ class AgentStateClaim(MessagesState):
     messages_critical: Annotated[List[BaseMessage], add_messages]
     claim: str 
     checkable: Optional[bool]
+    additional_context: Optional[str]
     subject: Optional[str]
     quantitative: Optional[str]
     precision: Optional[str]
@@ -74,6 +75,20 @@ class ConfirmationFinalResult(BaseModel):
 class ConfirmationMatch(BaseModel):
     match: bool = Field(False, description="Whether the user confirmed their was a matching claim")
     explanation: str = Field("", description="Explanation of the matching")
+
+class QueryItem(BaseModel):
+    query: str
+    reasoning: str
+
+class TopClaim(BaseModel):
+    short_summary: str
+    allowed_url: Optional[str]
+    alignment_rationale: str
+
+class ClaimMatchingOutput(BaseModel):
+    queries: List[QueryItem]          # ← now flat, not grouped
+    top_claims: List[TopClaim]
+    follow_up_question: str
 
 class GetSource(BaseModel):
     claim_source: str = Field("", description="What is the source of this claim?")
