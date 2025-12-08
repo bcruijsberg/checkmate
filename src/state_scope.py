@@ -61,6 +61,7 @@ class SummaryResult(BaseModel):
     based_on: str = Field("", description="how was the data collected or derived?")
     question: str = Field("", description="Question to user for clarification if needed")
     alerts: List[str] = Field([], description="Any alerts or warnings about the claim")
+    claim_source: str = Field("", description="What is the source of this claim?")
 
 class ConfirmationResult(BaseModel):
     confirmed: bool = Field(False, description="Whether the user confirmed the claim as checkable")
@@ -73,10 +74,10 @@ class ConfirmationFinalResult(BaseModel):
     based_on: str = Field("", description="how was the data collected or derived?")
     question: str = Field("", description="Question to user for clarification if needed")
     alerts: List[str] = Field([], description="Any alerts or warnings about the claim")
+    claim_source: str = Field("", description="What is the source of this claim?")
 
 class ConfirmationMatch(BaseModel):
     match: bool = Field(False, description="Whether the user confirmed their was a matching claim")
-    explanation: str = Field("", description="Explanation of the matching")
 
 class QueryItem(BaseModel):
     query: str
@@ -90,7 +91,6 @@ class TopClaim(BaseModel):
 class ClaimMatchingOutput(BaseModel):
     queries: List[QueryItem]          # ← now flat, not grouped
     top_claims: List[TopClaim]
-    follow_up_question: str
 
 class GetSource(BaseModel):
     claim_source: str = Field("", description="What is the source of this claim?")

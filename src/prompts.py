@@ -20,19 +20,19 @@ The messages that have been exchanged so far between yourself and the user are:
 {additional_context}
 
 Your first task is to classify the claim as one of:
-1. **Opinion** – expresses belief, attitude, judgment, or value (e.g., "I think the mayor is corrupt", "This policy is unfair").
-2. **Prediction** – makes a statement about a future event or uncertain outcome (e.g., "The economy will collapse next year").
-3. If it is neither of those, classify it as a **Fact** 
+1. *Opinion* – expresses belief, attitude, judgment, or value (e.g., "I think the mayor is corrupt", "This policy is unfair").
+2. *Prediction* – makes a statement about a future event or uncertain outcome (e.g., "The economy will collapse next year").
+3. If it is neither of those, classify it as a *Fact* 
 
 ### Important Rules
-- **Opinions** and **Predictions** are **UNCHECKABLE** — they cannot be verified with factual evidence.
-- **Facts** are **POTENTIALLY CHECKABLE** — they can be verified, but might need more clarification, this will be collected in the next steps.
+- *Opinions* and *Predictions* are *UNCHECKABLE* — they cannot be verified with factual evidence.
+- *Facts* are *POTENTIALLY CHECKABLE* — they can be verified, but might need more clarification, this will be collected in the next steps.
 
 ### Steps
-1. If the user provided **Additional context** (if this is not None). Take this specifically into account when evaluating the claim.
-2. **Classify** the claim as *Opinion*, *Prediction*, or *Fact*.
-3. **Explain briefly** why it fits that category.
-4. **Formulate a polite verification question** to confirm this classification and explanation with the user before proceeding.
+1. If the user provided *Additional context* (if this is not None). Take this specifically into account when evaluating the claim.
+2. *Classify* the claim as *Opinion*, *Prediction*, or *Fact*.
+3. *Explain briefly* why it fits that category.
+4. *Formulate a polite verification question* to confirm this classification and explanation with the user before proceeding.
 
 Keep your tone neutral and analytical.
 
@@ -68,12 +68,12 @@ Below is the user's latest response:
 </User Answer>
 
 ### Your Task
-Determine whether the user’s response indicates that they **confirm** the summary as accurate or not.
+Determine whether the user’s response indicates that they *confirm* the summary as accurate or not.
 
-- If the user explicitly agrees (e.g., “Yes,” “That’s correct,” “Exactly,” “I agree,” etc.), mark **confirmed: true**. 
+- If the user explicitly agrees (e.g., “Yes,” “That’s correct,” “Exactly,” “I agree,” etc.), mark *confirmed: true*. 
 - If the user indicates they want to move forward (e.g., uses words like “proceed,” “continue,” “next step” “additional context is needed”), set "confirmed": true.
-- If the user agrees, but also adds new content, mark **confirmed: false**.  
-- If they express disagreement, uncertainty, or corrections, mark **confirmed: false**.
+- If the user agrees, but also adds new content, mark *confirmed: false*.  
+- If they express disagreement, uncertainty, or corrections, mark *confirmed: false*.
 
 Keep your tone neutral and analytical.
 
@@ -112,7 +112,7 @@ You don't need to acquire all missing details right now; just identify what is m
 If the user says no more details are available, proceed with what you have.
 
 ### Steps
-1. If the user provided **Additional context** (if this is not None). Add this to one of these fields: subject, quantitative, precision, based_on, and skip steps 2 to 5.
+1. If the user provided *Additional context* (if this is not None). Add this to one of these fields: subject, quantitative, precision, based_on, and skip steps 2 to 5.
 
 2. Identify the subject. If unclear → "unclear".
 3. Determine if the claim is *quantitative8*. Set *quantitative* to true/false.
@@ -194,11 +194,11 @@ Below is the user’s latest reply:
 </User Answer>
 
 ### Your Task
-Determine whether the user’s response **confirms** the information as correct or final, or if it suggests **further clarification is needed**. 
+Determine whether the user’s response *confirms* the information as correct or final, or if it suggests *further clarification is needed*. 
 
-- If the user explicitly agrees, confirms, or says everything is correct (e.g., "Yes," "Continue," "That’s right," "Correct," "Exactly," "I agree," etc.), mark **confirmed: true**.
-- If the user corrects details, adds new information, expresses uncertainty, or asks a new question, mark **confirmed: false**.
-- If the user doesn’t have more information (e.g., “I’m not sure,” “I don’t know,” “That’s all I have,” “No more details,” “That’s everything,” “Nothing else,” etc.), mark **confirmed: true**.
+- If the user explicitly agrees, confirms, or says everything is correct (e.g., "Yes," "Continue," "That’s right," "Correct," "Exactly," "I agree," etc.), mark *confirmed: true*.
+- If the user corrects details, adds new information, expresses uncertainty, or asks a new question, mark *confirmed: false*.
+- If the user doesn’t have more information (e.g., “I’m not sure,” “I don’t know,” “That’s all I have,” “No more details,” “That’s everything,” “Nothing else,” etc.), mark *confirmed: true*.
 
 ### Important Rules
 Never ask a question twice (check previous messages); 
@@ -232,19 +232,19 @@ The messages exchanged so far between yourself and the user are:
 
 The context so far:
 <Claim Information>
-- **subject**: {subject}
-- **quantitative**: {quantitative}
-- **precision**: {precision}
-- **based_on**: {based_on}
-- **alerts**: {alerts}
+- *subject*: {subject}
+- *quantitative*: {quantitative}
+- *precision*: {precision}
+- *based_on*: {based_on}
+- *alerts*: {alerts}
 </Claim Information>
 
 ### Steps
 1. Review the claim, conversation, and state fields.
-2. **Summarize concisely** what is currently known about the claim and its checkability.
+2. *Summarize concisely* what is currently known about the claim and its checkability.
    - Include: subject, type (quantitative/qualitative), precision, basis, and uncertainties.
    - Mention any active alerts or missing information.
-3. **Formulate a polite verification question** to confirm this summary with the user before proceeding to research.
+3. *Formulate a polite verification question* to confirm this summary with the user before proceeding to research.
 
 Keep your tone neutral and analytical.
 
@@ -253,11 +253,12 @@ Respond in the following structured JSON format:
 {{
   "summary": "Concise summary of the claim, its characteristics, and discussion so far.",
   "subject": "subject text" or "unclear",
-  "quantitative": "true" or "false", and a short explanation,
+  "quantitative": "quantitative" or "qualitative", and a short explanation,
   "precision": "precise" or "vague" or "absolute (100%)" or "", and a short explanation,
   "based_on": "methodology" or "unclear", and a short explanation,
   "question": "one open clarifying or confirmation question, don't ask for specific details, let the user figure this out",
   "alerts": ["each alert as a short string; [] if none"]
+  "claim_source": "If provided by the user, the source from whom this claim originated, if none, use an empty string."
 }}
 """
 
@@ -282,11 +283,11 @@ Below is the user's latest response:
 </User Answer>
 
 ### Your Task
-Determine whether the user’s response indicates that they **confirm** the summary as accurate or not.
+Determine whether the user’s response indicates that they *confirm* the summary as accurate or not.
 
-- If the user explicitly agrees (e.g., “Yes,” “That’s correct,” “Exactly,” “I agree,” etc.), mark **confirmed: true**.  
-- If they express disagreement, uncertainty, or corrections, mark **confirmed: false**.
-- If the user adds new information, add this to summary, mark **confirmed: false**.
+- If the user explicitly agrees (e.g., “Yes,” “That’s correct,” “Exactly,” “I agree,” etc.), mark *confirmed: true*.  
+- If they express disagreement, uncertainty, or corrections, mark *confirmed: false*.
+- If the user adds new information, add this to summary, mark *confirmed: false*.
 
 Keep your tone neutral and analytical.
 
@@ -296,11 +297,12 @@ Respond in the following structured JSON format:
   "confirmed": true or false
   "summary": "Concise summary of the claim, its characteristics, and discussion so far.",
   "subject": "subject text" or "unclear",
-  "quantitative": "true" or "false", and a short explanation. The field "quantitative" must always be a **string**, not a boolean.,
-  "precision": "precise" or "vague" or "absolute (100%)" or "",
-  "based_on": "methodology" or "unclear",
-  "question": "one clarifying or confirmation question",
+  "quantitative": "quantitative" or "qualitative", and a short explanation,
+  "precision": "precise" or "vague" or "absolute (100%)" or "", and a short explanation,
+  "based_on": "methodology" or "unclear", and a short explanation,
+  "question": "one open clarifying or confirmation question, don't ask for specific details, let the user figure this out",
   "alerts": ["each alert as a short string; [] if none"]
+  "claim_source": "If provided by the user, the source from whom this claim originated, if none, use an empty string."
 }}
 """
 
@@ -312,7 +314,7 @@ but to support the student in developing their own reasoning and critical thinki
 reflective questions that encourage exploration, justification, and evaluation. You do not take over the student's thinking, 
 and you do not complete tasks for them. Avoid giving conclusions or definitive judgments unless the workflow specifically requires it.
 
-in this part you will retrieve possible matching existing claims from the Faiss database to the claim presented in the **summary and context** below
+in this part you will retrieve possible matching existing claims from the Faiss database to the claim presented in the *summary and context* below
 
 The messages exchanged so far between yourself and the user are:
 <Messages>
@@ -324,22 +326,22 @@ Below is the summary previously generated about the claim and discussion:
 {summary}
 </Summary>
 
-**subject**: {subject}
+*subject*: {subject}
 
 ### Steps
-1. Call **retriever_tool** with focused queries in small batches (2–3 queries per batch). After each batch:
-  - Discard candidates that are **off-topic** relative to the extracted **subject*.
-  - Keep only candidates whose **subject** overlaps strongly with the new claim. Require overlap on at least **3**: (entities, geography, timeframe or quantity).
+1. Call *retriever_tool* with focused queries in small batches (2–3 queries per batch). After each batch:
+  - Discard candidates that are *off-topic* relative to the extracted *subject*.
+  - Keep only candidates whose *subject* overlaps strongly with the new claim. Require overlap on at least *3*: (entities, geography, timeframe or quantity).
   - Use retrieved CONTEXT and ALLOWED_URLS to decide if you need more queries.
   - Stop calling tools once you have enough on-topic candidates (up to ~10 raw). 
 
 3. Normalize numeric and temporal expressions for matching:
-  - Map verbal to numeric (e.g., “one-third” ↔ 33%), allow a small tolerance (±10%) for **near** matches unless the exact figure is central.
+  - Map verbal to numeric (e.g., “one-third” ↔ 33%), allow a small tolerance (±10%) for *near* matches unless the exact figure is central.
   - Handle unit conversions if needed.
-  - Treat paraphrases as equivalent if the **proposition** is unchanged.
+  - Treat paraphrases as equivalent if the *proposition* is unchanged.
 
-4. **Selection of final claims**
-   - From the filtered candidates, select at most 5 **most relevant** existing claims.
+4. *Selection of final claims*
+   - From the filtered candidates, select at most 5 *most relevant* existing claims.
    - For each, prepare:
      - 1–2 sentence student-friendly summary of the claim.
      - ALLOWED_URL that best represents that claim.
@@ -356,7 +358,6 @@ and you do not complete tasks for them. Avoid giving conclusions or definitive j
 In this step, your task is to organise the previous retrieval work into a structured summary that:
 - shows which search queries were used (and why),
 - highlights a small set of potentially relevant existing claims,
-- and ends with a reflective follow-up question for the student.
 
 Use ONLY the evidence already retrieved in this conversation (the CONTEXT and ALLOWED_URLS from prior tool calls contained in the retrieval trace). 
 Do NOT call any tools or retrieve new information.
@@ -384,30 +385,24 @@ The retrieval trace may contain:
 
 From these inputs, construct an instance of the `ClaimMatchingOutput` schema with the following fields:
 
-- **queries**: a list of search questions that were (or could reasonably have been) used to search for similar claims.
+- *queries*: a list of search questions that were (or could reasonably have been) used to search for similar claims.
   - For each query, provide:
     - `query`: the concrete text of the retrieval query.
     - `reasoning`: 1–2 sentences explaining why this query is useful given the claim summary, subject, and retrieval trace.
 
-- **top_claims**: a list of up to 5 potentially relevant existing claims drawn from the retrieved information.
+- *top_claims*: a list of up to 5 potentially relevant existing claims drawn from the retrieved information.
   - For each claim, provide:
     - `short_summary`: 1–2 sentence, student-friendly description of the claim.
     - `allowed_url`: a single URL from the ALLOWED_URLS that best represents this claim (or null if none is available).
     - `alignment_rationale`: 1–2 sentences describing which facets (subject, entities, geography, timeframe, quantities) align or differ with the user's claim.
 
-- **follow_up_question**: one open, reflective question to the student that:
-  - encourages them to compare their original claim with the retrieved claims,
-  - and invites them to decide what should happen next in the investigation.
-
-If there are no good candidate claims in the retrieval trace, return an empty list for `top_claims` but still provide meaningful queries and a thoughtful follow-up question.
-
-Maintain a neutral and analytical tone.
+### Important Rules
+- Generate at least 3 queries, even if the retrieval trace contains fewer.
+- If there are no good candidate claims in the retrieval trace, return an empty list for `top_claims` but still provide meaningful queries.
+- Maintain a neutral and analytical tone.
 
 ### Output Format
-
-You are working with a system that will parse your answer directly into this Pydantic model:
-
-ClaimMatchingOutput:
+Respond in the following structured JSON format:
 {{
   "queries": [
     {{
@@ -422,10 +417,9 @@ ClaimMatchingOutput:
       "alignment_rationale": "string"
     }}
   ],
-  "follow_up_question": "string"
 }}
 
-Respond **only** with a JSON object that can be parsed into `ClaimMatchingOutput`. 
+Respond *only* with a JSON object that can be parsed into `ClaimMatchingOutput`. 
 Do not add any extra text, explanations, or markdown outside the JSON.
 """
 
@@ -455,16 +449,16 @@ Do NOT call any tools or retrieve new information.
 
 
 ### Task
-Analyze the user’s response and decide whether it indicates that a **matching claim** has been found.
+Analyze the user’s response and decide whether it indicates that a *matching claim* has been found.
 
-- If the user indicates that **no match** was found or wants to **continue researching** (e.g., “None,” “Keep searching,” “No match,” “Continue”), set `"match": false`.
-- If the user suggests that a claim **does match** their original statement (e.g., “Yes, that’s the one,” “That matches,” “Found it”), set `"match": true`.
+- If the user indicates that *no match* was found or wants to *continue researching* (e.g., “None,” “Keep searching,” “No match,” “Continue”), set `"match": false`.
+- If the user suggests that a claim *does match* their original statement (e.g., “Yes, that’s the one,” “That matches,” “Found it”), set `"match": true`.
 - If the message is ambiguous, infer the most likely intent from context.
 
 Maintain a neutral and analytical tone.
 
 ### Output Format
-Respond in **strict JSON**:
+Respond in *strict JSON*:
 {{
   "match": true or false,
   "explanation": "A concise, factual explanation of your reasoning"
@@ -491,18 +485,20 @@ Your task in this step is to identify the source information of the claim based 
 {user_answer}
 </User Answer>
 
-### Task
-Extract from the user’s answer any details about:
-1. **The source** of the claim — this publication, platform, or type of medium (e.g., article, video, social media post). Also provide the **Author** if provide by the user. 
-2. **The url** of the claim — if the user provide a url to the source of the claim.
-If the user provides only one of these (e.g., just the URL or only the author), fill in what is available and leave the missing field as an empty string `""`.
+### Claim source from state
+- Current claim source if known: {claim_source}
+
+### Steps
+1. *The claim source*, if this is not empty extract it from the user’s answer.
+2. *The url* if the claim was made online, and the user provided a url to the source of the claim.
+If only one of these is known(e.g., just the URL or only the author), fill in what is available and leave the missing field as an empty string `""`.
 
 Keep your tone objective and concise.
 
 ### Output Format
-Respond in **strict JSON** matching the schema below:
+Respond in *strict JSON* matching the schema below:
 {{
-  "claim_source": "string — what is the source/ medium (e.g., URL, platform, publication, etc.) and author of this claim ?",
+  "claim_source": "string — what is the source from whom this claim originated",
   "claim_url": "string — what is the url of the source of the claim"
 }}
 """
@@ -538,12 +534,12 @@ Important: in THIS step you do NOT call any tools. You only OUTPUT the queries t
 
 ### Task
 
-1. **Extract current source**
+1. *Extract current source*
    - From the conversation and the user's latest answer, extract the best current value for `claim_source`
      (this may be a URL, a site name, a platform like “TikTok”, or “an article on X”).
    - If nothing useful is given, use "".
 
-2. **Check if the user already gave the primary/original source**
+2. *Check if the user already gave the primary/original source*
    - If the user clearly gave the original/official/first source (e.g. the original NGO report, the government PDF, the creator’s page),
      then:
        - set `"primary_source": true`
@@ -551,21 +547,21 @@ Important: in THIS step you do NOT call any tools. You only OUTPUT the queries t
        - set `"search_queries": []`
      (because no further search is needed)
 
-3. **Otherwise: prepare search queries**
-   - If the primary source is NOT clear, you must PREPARE up to **3** search queries to help locate it.
+3. *Otherwise: prepare search queries*
+   - If the primary source is NOT clear, you must PREPARE up to *3* search queries to help locate it.
    - Order them from most specific to most general:
-       - If `{claim_url}` is non-empty, the **first** query MUST be that URL.
+       - If `{claim_url}` is non-empty, the *first* query MUST be that URL.
        - Otherwise, make the first query a precise combination of subject/summary + claim_source
          (e.g. "UN report on Gaza casualties October 2023").
        - Then add broader/fallback queries (subject + organization, subject + platform, subject + author if known).
    - Do NOT fabricate tool results — just output the queries.
 
-4. **Be explicit**
+4. *Be explicit*
    - Even if you cannot confirm the primary source, you must still return search queries so the NEXT STEP can run them.
 
 
 ### Output Format
-Respond in **strict JSON**:
+Respond in *strict JSON*:
 {{
   "claim_source": "string",
   "primary_source": true or false,
@@ -619,7 +615,7 @@ Use the information below:
 4. Prefer official domains (e.g. .gov, .org, the organization’s own site) and original uploaders over news articles that merely report on it.
 
 ### Output Format
-Respond in **strict JSON**:
+Respond in *strict JSON*:
 {{
   "primary_source": true or false,
   "claim_source": "string",
@@ -661,11 +657,11 @@ Use the information below:
 {alerts}
 
 The alerts describe which pieces of information are currently missing or uncertain.
-Your queries should **help reduce these gaps** and your output should **note if key details (e.g., methods or data sources) remain absent**.
+Your queries should *help reduce these gaps* and your output should *note if key details (e.g., methods or data sources) remain absent*.
 
 ### Guidance for handling alerts
 
-- If alerts include **"methodological details absent"** or **"source/methodology missing"**:
+- If alerts include *"methodological details absent"* or *"source/methodology missing"*:
   - include at least one query focusing on how the claim was produced — e.g. methods, data collection, or sample size.
   - examples: “{subject} methodology”, “{subject} data collection report”, “{subject} technical annex”.
 
@@ -675,12 +671,12 @@ Your queries should **help reduce these gaps** and your output should **note if 
 
 ### Task
 
-1. **Understand the research goal**
+1. *Understand the research goal*
    - The purpose is to gather *independent evidence* that either supports or refutes the claim.
    - Focus on factual data, primary reporting, or official documentation.
    - Avoid queries that would only find opinions, memes, or secondary summaries.
 
-2. **Generate up to 5 search queries**
+2. *Generate up to 5 search queries*
    - Make them diverse and cover different evidence angles.
    - Each query should be specific, self-contained, and easy for a search API to execute.
    - Good examples include:
@@ -689,15 +685,15 @@ Your queries should **help reduce these gaps** and your output should **note if 
      - `"data or report verifying {subject}"`
    - If the claim_url or source is known, include queries to verify authenticity or check for corrections.
 
-3. **Clarify research focus**
+3. *Clarify research focus*
    - Provide a brief sentence describing what kind of evidence these searches are meant to collect
      (e.g., “official press releases and data sources that confirm or deny the claim”).
 
-4. **Do NOT fabricate any results or call tools.**
+4. *Do NOT fabricate any results or call tools.*
    - Only output queries and focus description.
 
 ### Output Format
-Respond in **strict JSON**:
+Respond in *strict JSON*:
 {{
   "research_queries": [
     "query 1",
@@ -721,7 +717,7 @@ Generate a critical question, using the context below:
 - {claim}
 - {summary}
 
-- **Alerts (potential gaps):** {alerts}
+- *Alerts (potential gaps):* {alerts}
 
 - Critical questions so far (if any):
 <History>

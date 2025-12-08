@@ -456,6 +456,7 @@ def produce_summary(state: AgentStateClaim) -> Command[Literal["get_confirmation
                 "precision": result.precision,
                 "based_on": result.based_on,
                 "alerts": result.alerts or [],
+                "claim_source": result.claim_source,
                 "awaiting_user": True,
                 "next_node": "get_confirmation",
             }
@@ -516,6 +517,7 @@ def get_confirmation(state: AgentStateClaim) -> Command[Literal["produce_summary
                         "based_on": result.based_on,
                         "question": result.question,
                         "alerts": result.alerts or [],
+                        "claim_source": result.claim_source,
                         "messages": [ai_chat_msg],
                     }
             )       
@@ -530,6 +532,7 @@ def get_confirmation(state: AgentStateClaim) -> Command[Literal["produce_summary
                         "based_on": result.based_on,
                         "question": result.question,
                         "alerts": result.alerts or [],
+                        "claim_source": result.claim_source,
                         "next_node": None,
                     }
             )
@@ -538,67 +541,6 @@ def get_confirmation(state: AgentStateClaim) -> Command[Literal["produce_summary
 # ───────────────────────────────────────────────────────────────────────
 # CLAIM MATCHING NODE
 # ───────────────────────────────────────────────────────────────────────
-
-# def claim_matching(state: AgentStateClaim) -> Command[Literal["match_or_continue"]]:
-
-#     """ Call the retriever tool iteratively to find if similar claims have already been researched. """
-
-#     # retrieve conversation history
-#     conversation_history = list(state.get("messages", []))
-
-#     # Add the last message into a string for the prompt
-#     recent_messages = conversation_history[-MAX_HISTORY_MESSAGES:]  # tune this number
-#     messages_str = get_buffer_string(recent_messages)
-
-#     #Create a prompt
-#     prompt = retrieve_claims_prompt.format(
-#         summary=state.get("summary", ""),
-#         subject=state.get("subject", ""),
-#         messages=messages_str,
-#     )
-
-#     # Start with a single HumanMessage
-#     human = HumanMessage(content=prompt)
-
-#     # First model call: only the prompt
-#     result = llm_tools.invoke([human])
-
-#     # Iterate tool calls
-#     while getattr(result, "tool_calls", None):
-
-#         # empty tool messages list to contain tool outputs
-#         tool_msgs: List[ToolMessage] = []
-
-#         # loop over each tool call
-#         for t in result.tool_calls:
-#             name = t["name"]
-#             args = t.get("args") or {}
-
-#             # invoke the tool
-#             out = tools_dict[name].invoke(args)
-
-#             # append tool output as ToolMessage
-#             tool_msgs.append(
-#                 ToolMessage(
-#                     tool_call_id=t["id"],
-#                     name=name,
-#                     content=str(out),
-#                 )
-#             )
-
-#         # Next model call, and decide if more tool calls are needed
-#         result = llm_tools.invoke([human, result, *tool_msgs])
-    
-#     # Goto next node and update State
-#     return Command( 
-#         goto="match_or_continue",
-#         update={
-#             "messages": [human, result],
-#             "awaiting_user": True,
-#             "next_node": "match_or_continue",
-#         }
-#     )
-
 def claim_matching(state: AgentStateClaim) -> Command[Literal["structure_claim_matching"]]:
    
     """Call the retriever tool iteratively to find if similar claims have already been researched."""
@@ -661,7 +603,11 @@ def claim_matching(state: AgentStateClaim) -> Command[Literal["structure_claim_m
         },
     )
 
-def structure_claim_matching(state: AgentStateClaim) -> Command[Literal["match_or_continue"]]:
+# ───────────────────────────────────────────────────────────────────────
+# STRUCTURE CLAIM MATCHING NODE
+# ───────────────────────────────────────────────────────────────────────
+
+def structure_claim_matching(state: AgentStateClaim) -> Command[Literal["match_or_continue","get_source"]]:
    
     """Take the raw retrieval trace and turn it into structured output."""
 
@@ -709,23 +655,29 @@ def structure_claim_matching(state: AgentStateClaim) -> Command[Literal["match_o
         explanation_lines.append("No strong matching existing claims were identified based on the retrieved information.")
         explanation_lines.append("")  # blank line
 
-    # Add the reflective follow-up question
-    explanation_lines.append("**Next step for you**")
-    explanation_lines.append(result.follow_up_question)
-
     explanation_text = "\n".join(explanation_lines)
 
     ai_chat_msg = AIMessage(content=explanation_text)
 
-    return Command(
-        goto="match_or_continue",
-        update={
-            "messages": [ai_chat_msg],
-            "claim_matching_result": result, 
-            "awaiting_user": True,
-            "next_node": "match_or_continue",
-        },
-    )
+    if result.top_claims:
+        return Command(
+            goto="match_or_continue",
+            update={
+                "messages": [ai_chat_msg],
+                "claim_matching_result": result, 
+                "awaiting_user": True,
+                "next_node": "match_or_continue",
+            },
+        )
+    else:
+        return Command(
+            goto="get_source", 
+            update={
+                "messages": [ai_chat_msg],  
+                "awaiting_user": True,
+                "next_node": "get_source",
+            }
+        )
 
 
 # ───────────────────────────────────────────────────────────────────────
@@ -779,9 +731,7 @@ def match_or_continue(state: AgentStateClaim) -> Command[Literal["get_source", "
         else:
             ai_chat_msg = AIMessage(
                 content=(
-                    "No exact match found. Let's continue researching.\n"
-                    "Do you have a URL for the source of the claim? If so, please share it.\n"
-                    "If not, tell me who made the claim and in what medium (article, video, social media, etc.)."
+                    "No exact match found. Let's continue researching."
                 )
             )
         
@@ -791,7 +741,6 @@ def match_or_continue(state: AgentStateClaim) -> Command[Literal["get_source", "
                     goto="__end__", 
                     update={
                         "match": result.match,
-                        "explanation": result.explanation,
                         "messages": [ai_chat_msg], 
                         "awaiting_user": False,
                         "next_node": None
@@ -801,8 +750,7 @@ def match_or_continue(state: AgentStateClaim) -> Command[Literal["get_source", "
             return Command(
                     goto="get_source", 
                     update={
-                        "explanation": result.explanation,
-                      #  "messages": [ai_chat_msg],  
+                        "messages": [ai_chat_msg],  
                         "awaiting_user": True,
                         "next_node": "get_source",
                     }
@@ -815,10 +763,17 @@ def match_or_continue(state: AgentStateClaim) -> Command[Literal["get_source", "
 def get_source(state: AgentStateClaim) -> Command[Literal["get_primary_source"]]:
 
     """ Ask the user for the  source of the claim if no match was found."""
-
+    
+    # Retrieve the source of the claim
+    claim_source=state.get("claim_source")
+    
     if state.get("awaiting_user"):
 
-        ask_msg = AIMessage(content="Do you know the source of this claim and do you have a URL?")
+        if claim_source:
+            ask_msg = AIMessage(content="Was this claim made online and if such do you have the URL?")
+        elif claim_source is None or claim_source == "":
+            ask_msg = AIMessage(content="Do you know the source of this claim, and if this claim was made online, do you have the URL?")
+
         return Command(
             goto="__end__", 
             update={
@@ -841,9 +796,10 @@ def get_source(state: AgentStateClaim) -> Command[Literal["get_primary_source"]]
         structured_llm = llm.with_structured_output(GetSource, method="json_mode")
 
         # Create a prompt
-        prompt  =  identify_source_prompt.format(
+        prompt = identify_source_prompt.format(
             messages=messages_str,
             user_answer=user_answer,
+            claim_source=claim_source,
         )
 
         #invoke the LLM and store the output

@@ -80,7 +80,6 @@ claim.add_edge("checkable_fact", "critical_question")
 claim.add_edge("retrieve_information", "clarify_information")
 claim.add_edge("produce_summary", "critical_question")
 claim.add_edge("claim_matching", "structure_claim_matching")
-claim.add_edge("structure_claim_matching", "match_or_continue")
 claim.add_edge("locate_primary_source", "select_primary_source")
 claim.add_edge("research_claim", END)
 
