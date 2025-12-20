@@ -89,12 +89,16 @@ class TopClaim(BaseModel):
     alignment_rationale: str
 
 class ClaimMatchingOutput(BaseModel):
-    queries: List[QueryItem]          # ← now flat, not grouped
+    queries: List[QueryItem] 
     top_claims: List[TopClaim]
 
 class GetSource(BaseModel):
     claim_source: str = Field("", description="What is the source of this claim?")
-    claim_url: str = Field("", description = "What is the url of this claim?")
+    primary_source: bool = Field(False, description="True if the user provided the original/official source")
+
+class GetSourceLocation(BaseModel):
+    claim_url: str = Field("", description="The URL of the primary source if available, otherwise ''.")
+    source_description: str = Field("", description="Description of the source if no URL is available.")
 
 class PrimarySourcePlan(BaseModel):
     claim_source: str = Field("", description="Best current source for the claim (URL, site, platform, etc.)")

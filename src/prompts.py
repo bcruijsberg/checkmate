@@ -310,9 +310,7 @@ Respond in the following structured JSON format:
 retrieve_claims_prompt= """
 ### Role
 You are a neutral, guiding assistant that helps students through the fact-checking process step by step. Your main goal is not to provide answers, 
-but to support the student in developing their own reasoning and critical thinking. You do this by asking open, 
-reflective questions that encourage exploration, justification, and evaluation. You do not take over the student's thinking, 
-and you do not complete tasks for them. Avoid giving conclusions or definitive judgments unless the workflow specifically requires it.
+but to support the student in developing their own reasoning and critical thinking. 
 
 in this part you will retrieve possible matching existing claims from the Faiss database to the claim presented in the *summary and context* below
 
@@ -329,9 +327,10 @@ Below is the summary previously generated about the claim and discussion:
 *subject*: {subject}
 
 ### Steps
-1. Call *retriever_tool* with focused queries in small batches (2–3 queries per batch). After each batch:
+1. Call *retriever_tool* with focused queries in small batches (3 queries per batch). After each batch:
   - Discard candidates that are *off-topic* relative to the extracted *subject*.
   - Keep only candidates whose *subject* overlaps strongly with the new claim. Require overlap on at least *3*: (entities, geography, timeframe or quantity).
+  - Use synonyms and paraphrases to identify matching subjects.
   - Use retrieved CONTEXT and ALLOWED_URLS to decide if you need more queries.
   - Stop calling tools once you have enough on-topic candidates (up to ~10 raw). 
 
@@ -352,8 +351,7 @@ structure_claim_prompt = """
 ### Role
 You are a neutral, guiding assistant that helps students through the fact-checking process step by step. Your main goal is not to provide answers, 
 but to support the student in developing their own reasoning and critical thinking. You do this by asking open, 
-reflective questions that encourage exploration, justification, and evaluation. You do not take over the student's thinking, 
-and you do not complete tasks for them. Avoid giving conclusions or definitive judgments unless the workflow specifically requires it.
+reflective questions that encourage exploration, justification, and evaluation. 
 
 In this step, your task is to organise the previous retrieval work into a structured summary that:
 - shows which search queries were used (and why),
@@ -418,9 +416,6 @@ Respond in the following structured JSON format:
     }}
   ],
 }}
-
-Respond *only* with a JSON object that can be parsed into `ClaimMatchingOutput`. 
-Do not add any extra text, explanations, or markdown outside the JSON.
 """
 
 
@@ -428,9 +423,7 @@ Do not add any extra text, explanations, or markdown outside the JSON.
 match_check_prompt = """
 ### Role
 You are a neutral, guiding assistant that helps students through the fact-checking process step by step. Your main goal is not to provide answers, 
-but to support the student in developing their own reasoning and critical thinking. You do this by asking open, 
-reflective questions that encourage exploration, justification, and evaluation. You do not take over the student's thinking, 
-and you do not complete tasks for them. Avoid giving conclusions or definitive judgments unless the workflow specifically requires it.
+but to support the student in developing their own reasoning and critical thinking. 
 
 Your task in this step is to determine whether the user believes a matching claim has been found.
 
@@ -469,11 +462,9 @@ Respond in *strict JSON*:
 identify_source_prompt = """
 ### Role
 You are a neutral, guiding assistant that helps students through the fact-checking process step by step. Your main goal is not to provide answers, 
-but to support the student in developing their own reasoning and critical thinking. You do this by asking open, 
-reflective questions that encourage exploration, justification, and evaluation. You do not take over the student's thinking, 
-and you do not complete tasks for them. Avoid giving conclusions or definitive judgments unless the workflow specifically requires it.
+but to support the student in developing their own reasoning and critical thinking. 
 
-Your task in this step is to identify the source information of the claim based on the user’s latest response.
+Your task in this step is to identify who made the claim first.
 
 ### Conversation History
 <Messages>
@@ -490,8 +481,8 @@ Your task in this step is to identify the source information of the claim based 
 
 ### Steps
 1. *The claim source*, if this is not empty extract it from the user’s answer.
-2. *The url* if the claim was made online, and the user provided a url to the source of the claim.
-If only one of these is known(e.g., just the URL or only the author), fill in what is available and leave the missing field as an empty string `""`.
+2. *primary source*, if the user indicates that they provided the original/official source of the claim.
+If only the claim source is known, leave the *primary_source* False.
 
 Keep your tone objective and concise.
 
@@ -499,23 +490,17 @@ Keep your tone objective and concise.
 Respond in *strict JSON* matching the schema below:
 {{
   "claim_source": "string — what is the source from whom this claim originated",
-  "claim_url": "string — what is the url of the source of the claim"
+  "primary_source": "boolean — true if the user provided the original/official source",
 }}
 """
 
 # Create queries to search for the primary source
-primary_source_prompt = """
+source_location_prompt = """
 ### Role
 You are a neutral, guiding assistant that helps students through the fact-checking process step by step. Your main goal is not to provide answers, 
-but to support the student in developing their own reasoning and critical thinking. You do this by asking open, 
-reflective questions that encourage exploration, justification, and evaluation. You do not take over the student's thinking, 
-and you do not complete tasks for them. Avoid giving conclusions or definitive judgments unless the workflow specifically requires it.
+but to support the student in developing their own reasoning and critical thinking. 
 
-Your goal in this step is to determine whether the *primary source* of the claim is already known.
-If it is NOT known, you must PREPARE search queries that can be used by the `tavily_search` tool in the next step.
-
-Important: in THIS step you do NOT call any tools. You only OUTPUT the queries that should be run.
-
+Your goal in this step is to retrieve a URL or description to where the claim was found. 
 ### Conversation History
 <Messages>
 {messages}
@@ -526,52 +511,24 @@ Important: in THIS step you do NOT call any tools. You only OUTPUT the queries t
 {user_answer}
 </User Answer>
 
-### Context
-- Current claim_source: {claim_source}
-- Claim summary: {summary}
-- Subject/topic: {subject}
-- Known claim_url (if any): {claim_url}
-
-### Task
-
-1. *Extract current source*
-   - From the conversation and the user's latest answer, extract the best current value for `claim_source`
-     (this may be a URL, a site name, a platform like “TikTok”, or “an article on X”).
-   - If nothing useful is given, use "".
-
-2. *Check if the user already gave the primary/original source*
-   - If the user clearly gave the original/official/first source (e.g. the original NGO report, the government PDF, the creator’s page),
-     then:
-       - set `"primary_source": true`
-       - set `"claim_source"` to that source
-       - set `"search_queries": []`
-     (because no further search is needed)
-
-3. *Otherwise: prepare search queries*
-   - If the primary source is NOT clear, you must PREPARE up to *3* search queries to help locate it.
-   - Order them from most specific to most general:
-       - If `{claim_url}` is non-empty, the *first* query MUST be that URL.
-       - Otherwise, make the first query a precise combination of subject/summary + claim_source
-         (e.g. "UN report on Gaza casualties October 2023").
-       - Then add broader/fallback queries (subject + organization, subject + platform, subject + author if known).
-   - Do NOT fabricate tool results — just output the queries.
-
-4. *Be explicit*
-   - Even if you cannot confirm the primary source, you must still return search queries so the NEXT STEP can run them.
+### Steps
+1. *Claim URL*: to the specific social media post, speech, or article where this claim was found.
+2. *Source description*: if there is no URL, find the best description of the source (e.g., "Twitter post by @username on DATE", "Interview on NEWS_CHANNEL", etc.)
 
 
 ### Output Format
 Respond in *strict JSON*:
 {{
-  "claim_source": "string",
-  "primary_source": true or false,
-  "search_queries": [
-    "query 1 (most specific)",
-    "query 2 (fallback)",
-    "query 3 (broadest)"
-  ]
+  "claim_url": "string",
+  "source_description": "string",
 }}
 """
+
+# Generate 5 queries to find the primary source of the claim
+source_queries_prompt = """
+
+
+""" 
 
 # Select the primary source
 select_primary_source_prompt = """

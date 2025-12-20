@@ -24,8 +24,9 @@ from claim_nodes import (
     structure_claim_matching,
     match_or_continue,
     get_source,
-    get_primary_source,
+    get_location_source,
     locate_primary_source,
+    get_source_queries,
     select_primary_source,
     research_claim,
     critical_question,
@@ -68,7 +69,8 @@ claim.add_node("claim_matching", claim_matching)
 claim.add_node("structure_claim_matching", structure_claim_matching)
 claim.add_node("match_or_continue", match_or_continue)
 claim.add_node("get_source", get_source)
-claim.add_node("get_primary_source", get_primary_source)
+claim.add_node("get_location_source", get_location_source)
+claim.add_node("get_source_queries", get_source_queries)
 claim.add_node("locate_primary_source", locate_primary_source)
 claim.add_node("select_primary_source", select_primary_source)
 claim.add_node("research_claim", research_claim)
@@ -80,6 +82,7 @@ claim.add_edge("checkable_fact", "critical_question")
 claim.add_edge("retrieve_information", "clarify_information")
 claim.add_edge("produce_summary", "critical_question")
 claim.add_edge("claim_matching", "structure_claim_matching")
+claim.add_edge("get_source_queries", "locate_primary_source")
 claim.add_edge("locate_primary_source", "select_primary_source")
 claim.add_edge("research_claim", END)
 
@@ -153,6 +156,7 @@ if "claim_state" not in st.session_state:
         "claim_url": None,
         "claim_source": None,
         "primary_source": False,
+        "source_description": None,
         "match": False,
         "critical_question": None,
         "reasoning_summary": None

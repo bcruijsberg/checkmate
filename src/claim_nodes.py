@@ -13,7 +13,8 @@ from prompts import (
     match_check_prompt,
     structure_claim_prompt,
     identify_source_prompt,
-    primary_source_prompt,
+    source_location_prompt,
+    source_queries_prompt,
     select_primary_source_prompt,
     research_prompt,
     get_socratic_question,
@@ -28,6 +29,7 @@ from state_scope import (
     ConfirmationMatch,
     ClaimMatchingOutput,
     GetSource, 
+    GetSourceLocation,
     PrimarySourcePlan, 
     PrimarySourceSelection, 
     ResearchPlan
@@ -688,7 +690,6 @@ def match_or_continue(state: AgentStateClaim) -> Command[Literal["get_source", "
 
     """ Decide whether to continue researching or end the process if a matching claim was found."""
 
-    print(f"hier match and continue{state.get("next_node")} en {state.get("awaiting_user")}")
     if state.get("awaiting_user"):
         ask_msg = AIMessage(content="Do any of these match your claim? Or do you want to continue researching as suggested?")
         return Command(
@@ -757,22 +758,23 @@ def match_or_continue(state: AgentStateClaim) -> Command[Literal["get_source", "
             )
 
 # ───────────────────────────────────────────────────────────────────────
-# RETRIEVE SOURCE
+# RETRIEVE SOURCE, AND CHECK IF PRIMARY SOURCE KNOWN
 # ───────────────────────────────────────────────────────────────────────
 
-def get_source(state: AgentStateClaim) -> Command[Literal["get_primary_source"]]:
+def get_source(state: AgentStateClaim) -> Command[Literal["get_location_source"]]:
 
     """ Ask the user for the  source of the claim if no match was found."""
     
     # Retrieve the source of the claim
     claim_source=state.get("claim_source")
+    print(f"Claim source so far: {claim_source}")
     
     if state.get("awaiting_user"):
 
         if claim_source:
-            ask_msg = AIMessage(content="Was this claim made online and if such do you have the URL?")
+            ask_msg = AIMessage(content="Was {claim_source} the primary source (the first time this claim was made)?")
         elif claim_source is None or claim_source == "":
-            ask_msg = AIMessage(content="Do you know the source of this claim, and if this claim was made online, do you have the URL?")
+            ask_msg = AIMessage(content="Do you know the source and is this the primary source (when it was first made)?")
 
         return Command(
             goto="__end__", 
@@ -805,28 +807,28 @@ def get_source(state: AgentStateClaim) -> Command[Literal["get_primary_source"]]
         #invoke the LLM and store the output
         result = structured_llm.invoke([HumanMessage(content=prompt)])
 
-        # human-readable assistant message for the chat
-        if result.claim_source:
-            followup_text = (
-                f"Thanks, I captured the source as:\n\n**{result.claim_source}**\n\n"
-                "Do you know whether this is the **original / primary** source of the claim? "
-                "If not, tell me the original source or share its URL."
+        if result.primary_source:
+            question_text = (
+                f"Great, we have the primary source as **{result.primary_source}**.\n\n"
+                f"Can you locate or provide a URL to the specific social media post, "
+                f"speech, or article where {result.primary_source} first made this claim? "
+                f"Or can you describe the source if you don't have a URL?"
             )
         else:
-            followup_text = (
-                "I couldn’t identify a concrete source from that.\n"
-                "Can you tell me where the claim was published (URL, outlet, platform) "
-                "and, if possible, who made it?"
+            question_text = (
+                "I couldn't identify a primary source from that. "
+                "Can you locate or provide a URL to the specific social media post, "
+                "speech, or article where this claim was found? "
+                "Or can you describe the source if you don't have a URL?"
             )
+        ai_chat_msg = AIMessage(content=question_text)
 
-        ai_chat_msg = AIMessage(content=followup_text)
-
-        # Goto next node and update State
+         # Goto next node and update State
         return Command(
-                goto="get_primary_source", 
+                goto="get_location_source", 
                 update={
                     "claim_source": result.claim_source,
-                    "claim_url": result.claim_url,
+                    "primary_source": result.primary_source,
                     "messages": [ai_chat_msg],
                     "awaiting_user": True,
                     "next_node": None,
@@ -834,20 +836,18 @@ def get_source(state: AgentStateClaim) -> Command[Literal["get_primary_source"]]
         ) 
 
 # ───────────────────────────────────────────────────────────────────────
-# GET MORE INFO
+# RETRIEVE LOCATION OF SOURCE NODE, OR A DESCRIPTION
 # ───────────────────────────────────────────────────────────────────────
 
-def get_primary_source(state: AgentStateClaim) -> Command[Literal["research_claim","locate_primary_source"]]:
+def get_location_source(state: AgentStateClaim) -> Command[Literal["research_claim","get_source_queries"]]:
 
-    """ Ask the user for the original primary source of the claim, and more background on the source """
+    """ Ask the user where the claim was found. """
 
     if state.get("awaiting_user"):
 
-        ask_msg = AIMessage(content="Do you you know if this is the primary source? If not do you have it?")
         return Command(
             goto="__end__", 
             update={
-                "messages": [ask_msg],
                 "next_node": "get_primary_source",
                 "awaiting_user": False,
             },
@@ -863,16 +863,12 @@ def get_primary_source(state: AgentStateClaim) -> Command[Literal["research_clai
         messages_str = get_buffer_string(recent_messages)
 
         # Use structured output
-        structured_llm = llm.with_structured_output(PrimarySourcePlan, method="json_mode")
+        structured_llm = llm.with_structured_output(GetSourceLocation, method="json_mode")
 
         # Create a prompt
-        prompt  = primary_source_prompt.format(
+        prompt  = source_location_prompt.format(
             messages=messages_str,
             user_answer=user_answer,
-            summary = state.get("summary", ""),
-            subject = state.get("subject", ""),
-            claim_source=state.get("claim_source", ""),
-            claim_url = state.get("claim_url", "")
         )
 
         #invoke the LLM and store the output
@@ -881,23 +877,12 @@ def get_primary_source(state: AgentStateClaim) -> Command[Literal["research_clai
         # human-readable assistant message for the chat
         if result.primary_source:
             chat_text = (
-                f"We now have a primary source:\n\n**{result.claim_source}**\n\n"
-                "I'll use this to continue researching the claim."
+                f"We will now continue researching the claim."
             )
         else:
-            # we didn't get a clear primary source, so we will search for it in the next node
-            if result.search_queries:
-                queries_text = "\n".join(f"- {q}" for q in result.search_queries if q)
-                chat_text = (
-                    "I still don’t see a clear original / primary source.\n"
-                    "I'll run a web search to try to locate it, using these queries:\n"
-                    f"{queries_text}"
-                )
-            else:
-                chat_text = (
-                    "I still don’t see a clear original / primary source.\n"
-                    "I'll run a web search to try to locate it."
-                )
+            chat_text = (
+                f"We will now first try to locate the primary source (who made the claim first)."
+            )
 
         ai_chat_msg = AIMessage(content=chat_text)
 
@@ -906,24 +891,101 @@ def get_primary_source(state: AgentStateClaim) -> Command[Literal["research_clai
             return Command(
                 goto="research_claim", 
                 update={
-                    "primary_source": result.primary_source,
-                    "claim_source": result.claim_source,
-                    "search_queries": result.search_queries,
+                    "claim_url": result.claim_url,
+                    "source_description": result.source_description,
                     "messages":  [ai_chat_msg],
                     "next_node": None,
                 }
             )    
         else:
             return Command(
-                goto="locate_primary_source",
+                goto="get_source_queries",
                 update={
-                    "primary_source":result.primary_source,
-                    "claim_source": result.claim_source,
-                    "search_queries": result.search_queries,
+                    "claim_url": result.claim_url,
+                    "source_description": result.source_description,
                     "messages":  [ai_chat_msg],
                     "next_node": None,
                 }
             )  
+
+def get_source_queries(state: AgentStateClaim) -> Command[Literal["locate_primary_source"]]:
+
+    """ Ask the user for the original primary source of the claim, and more background on the source """
+
+    # retrieve conversation history
+    conversation_history = list(state.get("messages", []))
+
+    # Add the last message into a string for the prompt
+    recent_messages = conversation_history[-MAX_HISTORY_MESSAGES:]  # tune this number
+    messages_str = get_buffer_string(recent_messages)
+
+    # Use structured output
+    structured_llm = llm.with_structured_output(PrimarySourcePlan, method="json_mode")
+
+    # Create a prompt
+    prompt  = source_queries_prompt.format(
+        messages=messages_str,
+        user_answer=user_answer,
+        summary = state.get("summary", ""),
+        subject = state.get("subject", ""),
+        claim_source=state.get("claim_source", ""),
+        claim_url = state.get("claim_url", "")
+    )
+
+    #invoke the LLM and store the output
+    result = structured_llm.invoke([HumanMessage(content=prompt)])
+
+    # human-readable assistant message for the chat
+    if result.primary_source:
+        chat_text = (
+            f"We now have a primary source:\n\n**{result.claim_source}**\n\n"
+            "I'll use this to continue researching the claim."
+        )
+    else:
+        # we didn't get a clear primary source, so we will search for it in the next node
+        if result.search_queries:
+            queries_text = "\n".join(f"- {q}" for q in result.search_queries if q)
+            chat_text = (
+                "I still don’t see a clear original / primary source.\n"
+                "I'll run a web search to try to locate it, using these queries:\n"
+                f"{queries_text}"
+            )
+        else:
+            chat_text = (
+                "I still don’t see a clear original / primary source.\n"
+                "I'll run a web search to try to locate it."
+            )
+
+    ai_chat_msg = AIMessage(content=chat_text)
+
+    # Goto next node and update State
+    if result.primary_source:
+        return Command(
+            goto="research_claim", 
+            update={
+                "primary_source": result.primary_source,
+                "claim_source": result.claim_source,
+                "search_queries": result.search_queries,
+                "messages":  [ai_chat_msg],
+                "next_node": None,
+            }
+        )    
+    else:
+        return Command(
+            goto="locate_primary_source",
+            update={
+                "primary_source":result.primary_source,
+                "claim_source": result.claim_source,
+                "search_queries": result.search_queries,
+                "messages":  [ai_chat_msg],
+                "next_node": None,
+            }
+        )  
+
+
+
+
+
 
 # ───────────────────────────────────────────────────────────────────────
 # LOCATE PRIMARY SOURCE
