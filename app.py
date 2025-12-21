@@ -25,11 +25,12 @@ from claim_nodes import (
     match_or_continue,
     get_source,
     get_location_source,
-    locate_primary_source,
     get_source_queries,
-    confirm_source_queries,
+    get_search_queries,
+    confirm_search_queries,
+    find_sources,
     select_primary_source,
-    research_claim,
+    iterate_search,
     critical_question,
 )
 from langgraph.graph import StateGraph, START, END
@@ -72,10 +73,11 @@ claim.add_node("match_or_continue", match_or_continue)
 claim.add_node("get_source", get_source)
 claim.add_node("get_location_source", get_location_source)
 claim.add_node("get_source_queries", get_source_queries)
-claim.add_node("confirm_source_queries", confirm_source_queries)
-claim.add_node("locate_primary_source", locate_primary_source)
+claim.add_node("confirm_search_queries", confirm_search_queries)
+claim.add_node("find_sources", find_sources)
 claim.add_node("select_primary_source", select_primary_source)
-claim.add_node("research_claim", research_claim)
+claim.add_node("get_search_queries", get_search_queries)
+claim.add_node("iterate_search",iterate_search)
 claim.add_node("router", router)
 
 # Entry point
@@ -84,9 +86,7 @@ claim.add_edge("checkable_fact", "critical_question")
 claim.add_edge("retrieve_information", "clarify_information")
 claim.add_edge("produce_summary", "critical_question")
 claim.add_edge("claim_matching", "structure_claim_matching")
-claim.add_edge("get_source_queries", "confirm_source_queries")
-claim.add_edge("locate_primary_source", "select_primary_source")
-claim.add_edge("research_claim", END)
+claim.add_edge("get_search_queries", "confirm_search_queries")
 
 claim_flow = claim.compile()
 
@@ -154,7 +154,6 @@ if "claim_state" not in st.session_state:
         "search_queries": [],
         "tavily_context": None,
         "research_focus": None,
-        "research_results": [],
         "claim_url": None,
         "claim_source": None,
         "primary_source": False,

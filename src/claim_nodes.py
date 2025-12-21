@@ -16,7 +16,8 @@ from prompts import (
     source_queries_prompt,
     confirm_queries_prompt,
     select_primary_source_prompt,
-    research_prompt,
+    search_queries_prompt,
+    iterate_search_prompt,
     get_socratic_question,
 )
 from state_scope import (
@@ -30,12 +31,10 @@ from state_scope import (
     ClaimMatchingOutput,
     GetSource, 
     GetSourceLocation,
-    GetSourceQueries,
-    PrimarySourcePlan, 
+    GetSearchQueries,
     PrimarySourceSelection, 
-    ResearchPlan
 )
-from langchain_core.messages import BaseMessage,HumanMessage,AIMessage,get_buffer_string
+from langchain_core.messages import BaseMessage,HumanMessage,AIMessage, ToolMessage,get_buffer_string
 from typing import List, Dict, Any, Literal
 from langgraph.graph import StateGraph, START, END
 from langgraph.graph.message import add_messages
@@ -64,10 +63,11 @@ def router(state: AgentStateClaim) -> Command[
         "get_source",
         "get_location_source",
         "get_source_queries",
-        "confirm_source_queries",
-        "locate_primary_source",
+        "confirm_search_queries",
+        "find_sources",
         "select_primary_source",
-        "research_claim"]
+        "iterate_search",
+        ]
 ]:
     """ Route to correct node, after user reply """
 
@@ -79,25 +79,7 @@ def router(state: AgentStateClaim) -> Command[
 # # CRITICAL QUESTION NODE
 # # ───────────────────────────────────────────────────────────────────────
 
-def critical_question(state: AgentStateClaim) -> Command[
-    Literal[
-        "checkable_fact",
-        "checkable_confirmation",
-        "retrieve_information",
-        "clarify_information",
-        "produce_summary",
-        "critical_question",
-        "get_confirmation",
-        "claim_matching",
-        "match_or_continue",
-        "get_source",
-        "get_location_source",
-        "get_source_queries",
-        "confirm_source_queries",
-        "locate_primary_source",
-        "select_primary_source",
-        "research_claim"]
-]:
+def critical_question(state: AgentStateClaim) -> Command[Literal["checkable_confirmation","get_confirmation"]]:
 
     """ Ask a socratic question to make the user think about the consequences of a fact checking a claim """
 
@@ -845,7 +827,7 @@ def get_source(state: AgentStateClaim) -> Command[Literal["get_location_source"]
 # RETRIEVE LOCATION OF SOURCE NODE, OR A DESCRIPTION
 # ───────────────────────────────────────────────────────────────────────
 
-def get_location_source(state: AgentStateClaim) -> Command[Literal["research_claim","get_source_queries"]]:
+def get_location_source(state: AgentStateClaim) -> Command[Literal["get_search_queries","get_source_queries"]]:
 
     """ Ask the user where the claim was found. """
 
@@ -898,7 +880,7 @@ def get_location_source(state: AgentStateClaim) -> Command[Literal["research_cla
         # Goto next node and update State
         if primary_source:
             return Command(
-                goto="research_claim", 
+                goto="get_search_queries", 
                 update={
                     "claim_url": result.claim_url,
                     "source_description": result.source_description,
@@ -922,7 +904,7 @@ def get_location_source(state: AgentStateClaim) -> Command[Literal["research_cla
 # ───────────────────────────────────────────────────────────────────────
 # GENERATE QUERIES TO LOCATE PRIMARY SOURCE NODE
 # ───────────────────────────────────────────────────────────────────────
-def get_source_queries(state: AgentStateClaim) -> Command[Literal["confirm_source_queries"]]:
+def get_source_queries(state: AgentStateClaim) -> Command[Literal["confirm_search_queries"]]:
 
     """ Generate queries to locate the primary source of the claim. """
 
@@ -934,7 +916,7 @@ def get_source_queries(state: AgentStateClaim) -> Command[Literal["confirm_sourc
     messages_str = get_buffer_string(recent_messages)
 
     # Use structured output
-    structured_llm = llm.with_structured_output(GetSourceQueries, method="json_mode")
+    structured_llm = llm.with_structured_output(GetSearchQueries, method="json_mode")
 
     # Create a prompt
     prompt  = source_queries_prompt.format(
@@ -960,30 +942,30 @@ def get_source_queries(state: AgentStateClaim) -> Command[Literal["confirm_sourc
 
     # Goto next node and update State  
     return Command(
-        goto="confirm_source_queries", 
+        goto="confirm_search_queries", 
         update={
             "search_queries": result.search_queries,
             "messages":  [ai_chat_msg],
             "next_node": None,
             "awaiting_user": True,
             "confirmed":False,
+            "research_focus": "select_primary_source",
         }
     )    
 
 # ───────────────────────────────────────────────────────────────────────
-# CONFIRM QUERIES TO LOCATE PRIMARY SOURCE NODE
+# CONFIRM SEARCH QUERIES NODE
 # ───────────────────────────────────────────────────────────────────────
-def confirm_source_queries(state: AgentStateClaim) -> Command[Literal["locate_primary_source"]]:
+def confirm_search_queries(state: AgentStateClaim) -> Command[Literal["find_sources","confirm_search_queries"]]:
 
     """ Get confirmation from user on the gathered information."""
 
     if state.get("awaiting_user"):
 
-    #    ask_msg = AIMessage(content=state.get("question", []))
         return Command(
             goto="__end__", 
             update={
-                "next_node": "confirm_source_queries",
+                "next_node": "confirm_search_queries",
                 "awaiting_user": False,
             },
         )
@@ -997,7 +979,7 @@ def confirm_source_queries(state: AgentStateClaim) -> Command[Literal["locate_pr
         search_queries_str= "\n".join(f"- {a}" for a in search_queries)
 
         # Use structured output
-        structured_llm = llm.with_structured_output(GetSourceQueries, method="json_mode")
+        structured_llm = llm.with_structured_output(GetSearchQueries, method="json_mode")
 
         # Create a prompt
         prompt  =  confirm_queries_prompt.format(
@@ -1011,9 +993,8 @@ def confirm_source_queries(state: AgentStateClaim) -> Command[Literal["locate_pr
          # human-readable assistant message for the chat
         queries_text = "\n".join(f"- {q}" for q in result.search_queries if q)
         if result.confirmed:
-            confirm_text = "We will continue locating the primary source."
+            confirm_text = "We will continue searching."
         else:
-            confirm_text = ""
             confirm_text = (
                 "Is there anything else you would like to change about the search queries?\n"
                 f"{queries_text}"
@@ -1024,7 +1005,7 @@ def confirm_source_queries(state: AgentStateClaim) -> Command[Literal["locate_pr
         # Goto next node and update State
         if result.confirmed:
             return Command(
-                    goto="locate_primary_source", 
+                    goto="find_sources", 
                     update={
                         "confirmed": result.confirmed,
                         "search_queries": result.search_queries,
@@ -1034,7 +1015,7 @@ def confirm_source_queries(state: AgentStateClaim) -> Command[Literal["locate_pr
             )       
         else:
             return Command(
-                    goto="confirm_source_queries", 
+                    goto="confirm_search_queries", 
                     update={
                         "search_queries": result.search_queries,
                         "messages": [ai_chat_msg],
@@ -1044,10 +1025,10 @@ def confirm_source_queries(state: AgentStateClaim) -> Command[Literal["locate_pr
             )
 
 # ───────────────────────────────────────────────────────────────────────
-# LOCATE PRIMARY SOURCE
+# FIND SOURCES NODE
 # ───────────────────────────────────────────────────────────────────────
 
-def locate_primary_source(state: AgentStateClaim) -> Command[Literal["select_primary_source"]]:
+def find_sources(state: AgentStateClaim) -> Command[Literal["select_primary_source"]]:
 
     """Run Tavily for each prepared query and store structured results with diversity."""
 
@@ -1063,7 +1044,7 @@ def locate_primary_source(state: AgentStateClaim) -> Command[Literal["select_pri
 
     # Run each query
     for q in search_queries:
-        tool_output = tavily_tool.invoke({"query": q, "max_results": 10})
+        tool_output = tavily_tool.invoke({"query": q, "max_results": 12})
         out_dict = tool_output.model_dump() if hasattr(tool_output, "model_dump") else dict(tool_output)
 
         compact = {"query": out_dict.get("query", q), "results": []}
@@ -1099,29 +1080,43 @@ def locate_primary_source(state: AgentStateClaim) -> Command[Literal["select_pri
 
     # Build message
     lines = ["Here are the top results I found for each search query:", ""]
+    startnr=1
+
     for block in tavily_results:
         query = block.get("query")
         results = block.get("results", [])
         if not results:
             continue
 
+        # Add query header and blank lines
+        lines.append("") 
         lines.append(f"**Query:** {query}")
-        for r in results:
+        lines.append("") 
+
+        # List results
+        for i, r in enumerate(results, start=startnr):
             title = r.get("title")
             url = r.get("url")
-            lines.append(f"- **[{title}]({url})**")
-        lines.append("")
-
+            lines.append(f"{i}. **[{title}]({url})**")
+        startnr += len(results)
+  
     new_msgs.append(AIMessage(content="\n".join(lines)))
+
+    #check if this search is for locating primary source or general research
+    research_focus = state.get("research_focus")
+    if research_focus == "select_primary_source":
+        state_next_node = "select_primary_source"
+    else:
+        state_next_node = "iterate_search"
 
     # Goto next node and update State
     return Command(
-        goto="select_primary_source",
+        goto=state_next_node,
         update={
             "tavily_context": tavily_results,
             "messages": new_msgs,
             "awaiting_user": True,
-            "next_node": "select_primary_source",
+            "next_node": None,
         },
     )
 
@@ -1130,13 +1125,12 @@ def locate_primary_source(state: AgentStateClaim) -> Command[Literal["select_pri
 # SELECT PRIMARY SOURCE
 # ───────────────────────────────────────────────────────────────────────
 
-def select_primary_source(state: AgentStateClaim) -> Command[Literal["research_claim"]]:
+def select_primary_source(state: AgentStateClaim) -> Command[Literal["get_search_queries"]]:
 
     """ pick the best / most likely primary source. """
 
     if state.get("awaiting_user"):
-
-        ask_msg = AIMessage(content="Is one of these results the primary source?")
+        ask_msg = AIMessage(content="Does any of these sources correspond to the primary source of the claim?")
         return Command(
             goto="__end__", 
             update={
@@ -1148,7 +1142,6 @@ def select_primary_source(state: AgentStateClaim) -> Command[Literal["research_c
     else:
         # Get the context and conversation history
         conversation_history = list(state.get("messages", []))
-        tavily_context = state.get("tavily_context", [])
         user_answer = get_new_user_reply(conversation_history)
 
         # Use structured output 
@@ -1158,16 +1151,10 @@ def select_primary_source(state: AgentStateClaim) -> Command[Literal["research_c
         recent_messages = conversation_history[-MAX_HISTORY_MESSAGES:]  # tune this number
         messages_str = get_buffer_string(recent_messages)
 
-        # turn tavily_context into something the LLM can read
-        tavily_pretty = json.dumps(tavily_context, indent=2)
-
         # Create a prompt
         prompt = select_primary_source_prompt.format(
-            summary=state.get("summary", ""),
-            subject=state.get("subject", ""),
             claim_source=state.get("claim_source", ""),
             claim_url=state.get("claim_url", ""),
-            tavily_context=tavily_pretty,
             user_answer=user_answer,
             messages=messages_str,
         )
@@ -1175,34 +1162,35 @@ def select_primary_source(state: AgentStateClaim) -> Command[Literal["research_c
         #invoke the LLM and store the output
         result = structured_llm.invoke([HumanMessage(content=prompt)])
 
-        # Add a warning if the primary source is not found
+        # retrieve existing alerts
         alerts = list(state.get("alerts", []))
-        if not result.primary_source:
-            alerts.append("primary source not found")
 
         # human-readable assistant message
         if result.primary_source:
             ai_chat_msg = AIMessage(
                 content=(
-                    f"✅ I'll treat this as the primary source:\n\n**{result.claim_source or result.claim_url}**\n\n"
-                    "I will now research the claim further."
+                    f"Great, you have identified **{result.claim_source}** as the primary source of the claim. "
+                    "I'll proceed with the research."
                 )
             )
-        else:
-            ai_chat_msg = AIMessage(
-                content=(
-                    "I couldn’t identify a clear primary source from these results. "
-                    "I'll continue with the research anyway, but note that the original source is still missing."
+        else:   
+            # Add an alert if the primary source is not found
+            if not result.primary_source:
+                alerts.append("primary source not found")
+                ai_chat_msg = AIMessage(
+                    content=(
+                        "I couldn’t identify a clear primary source from these results. "
+                        "I'll continue with the research anyway, but note that the original source is still missing."
+                    )
                 )
-            )
 
         # Goto next node and update State
         return Command(
-            goto="research_claim",
+            goto="get_search_queries",
             update={
                 "primary_source": result.primary_source,
-                "claim_source": result.claim_source or state.get("claim_source", ""),
-                "claim_url": result.claim_url or state.get("claim_url", ""),
+                "claim_source": result.claim_source,
+                "claim_url": result.claim_url,
                 "messages": [ai_chat_msg],
                 "alerts": alerts,
                 "next_node": None,
@@ -1210,90 +1198,125 @@ def select_primary_source(state: AgentStateClaim) -> Command[Literal["research_c
         )
 
 # ───────────────────────────────────────────────────────────────────────
-# RESEARCH CLAIM
+# GENERATE QUERIES TO FALSIFY OR VERIFY CLAIM NODE
 # ───────────────────────────────────────────────────────────────────────
+def get_search_queries(state: AgentStateClaim) -> Command[Literal["confirm_search_queries"]]:
 
-from typing import Literal, List
-from langchain_core.messages import AIMessage, HumanMessage, ToolMessage, BaseMessage
-from langgraph.types import Command
-from langgraph.graph import END
+    """ Generate queries to locate the primary source of the claim. """
 
-MAX_HISTORY_MESSAGES = 6 
-
-def research_claim(state: AgentStateClaim) -> Command[Literal["__end__"]]:
-
-    """Create research queries and run tavily_search for each query."""
-
-    # Get the context and conversation history
+    # retrieve conversation history
     conversation_history = list(state.get("messages", []))
-    alerts = list(state.get("alerts", []))
 
-    recent_messages = conversation_history[-MAX_HISTORY_MESSAGES:]
+    # Add the last message into a string for the prompt
+    recent_messages = conversation_history[-MAX_HISTORY_MESSAGES:]  # tune this number
     messages_str = get_buffer_string(recent_messages)
 
-    # Use structured output 
-    structured_llm = llm.with_structured_output(ResearchPlan, method="json_mode")
+    # retrieve alerts and format to string for the prompt
+    alerts=state.get("alerts", [])
+    alerts_str= "\n".join(f"- {a}" for a in alerts)
+
+    # Use structured output
+    structured_llm = llm.with_structured_output(GetSearchQueries, method="json_mode")
 
     # Create a prompt
-    prompt = research_prompt.format(
-        summary=state.get("summary", ""),
-        subject=state.get("subject", ""),
-        claim_source=state.get("claim_source", ""),
-        claim_url=state.get("claim_url", ""),
-        alerts=alerts,
+    prompt  = search_queries_prompt.format(
         messages=messages_str,
+        alerts=alerts_str,
+        summary = state.get("summary", ""),
+        claim = state.get("claim", ""),
+        claim_source=state.get("claim_source", ""),
+        claim_url = state.get("claim_url", ""),
+        claim_description = state.get("claim_description", "")
     )
+
+    #invoke the LLM and store the output
     result = structured_llm.invoke([HumanMessage(content=prompt)])
 
-    # We'll collect ONLY new messages in this list and return them.
-    new_msgs: List[BaseMessage] = []
-
-    # Run Tavily for each proposed query
-    research_results = []
-    for q in result.research_queries or []:
-        if not q:
-            continue
-        tavily_tool = tools_dict.get("tavily_search")
-        if tavily_tool is None:
-            continue
-
-        tool_output = tavily_tool.invoke({"query": q})
-
-        research_results.append({"query": q, "result": tool_output})
-
-        # Optional: minimal ToolMessage so the message stream shows the action occurred
-        new_msgs.append(
-            ToolMessage(
-                name="tavily_search",
-                content=f"Search completed for: {q}",
-                tool_call_id=f"tavily-research-{hash(q)}",
-            )
-        )
-
-    # human-readable assistant message
-    lines = []
-    if result.research_queries:
-        lines.append("I searched for additional evidence using these queries:")
-        lines += [f"- {q}" for q in result.research_queries if q]
-    if alerts:
-        lines.append("Note: I also tried to address earlier missing details.")
-    if not lines:
-        lines.append("I tried to collect additional evidence for this claim.")
-
-    new_msgs.append(AIMessage(
-        content="\n".join(lines),
-        additional_kwargs={"display": True}   # your Streamlit renderer shows only display=True
-    ))
-
-    # Goto next node and update State
-    return Command(
-        goto=END,
-        update={
-            "research_queries": result.research_queries,
-            "research_focus": result.research_focus,
-            "research_results": research_results,
-            "messages": new_msgs,
-            "awaiting_user": False,
-        },
+    # create a human-readable assistant message for the chat
+    queries_text = "\n".join(f"- {q}" for q in result.search_queries if q)
+    chat_text = (
+        "I will perform a search with these queries, would you like to add or change something?\n"
+        f"{queries_text}"
     )
 
+    ai_chat_msg = AIMessage(content=chat_text)
+
+    # Goto next node and update State  
+    return Command(
+        goto="confirm_search_queries", 
+        update={
+            "search_queries": result.search_queries,
+            "messages":  [ai_chat_msg],
+            "next_node": None,
+            "awaiting_user": True,
+            "confirmed":False,
+            "research_focus": "iterate_search",
+        }
+    ) 
+
+# ───────────────────────────────────────────────────────────────────────
+# ASK TO ITERATE SEARCH NODE
+# ───────────────────────────────────────────────────────────────────────
+
+def iterate_search(state: AgentStateClaim) -> Command[Literal["get_search_queries","__end__"]]:
+
+    """ pick the best / most likely primary source. """
+
+    if state.get("awaiting_user"):
+        ask_msg = AIMessage(content="Do you want to search once more?")
+        return Command(
+            goto="__end__", 
+            update={
+                "messages": [ask_msg],
+                "next_node": "iterate_search",
+                "awaiting_user": False,
+            },
+        )
+    else:
+        # Get the context and conversation history
+        conversation_history = list(state.get("messages", []))
+        user_answer = get_new_user_reply(conversation_history)
+
+        # Use structured output 
+        structured_llm = llm.with_structured_output(ConfirmationResult, method="json_mode")
+
+        # Add the last message into a string for the prompt
+        recent_messages = conversation_history[-MAX_HISTORY_MESSAGES:]  # tune this number
+        messages_str = get_buffer_string(recent_messages)
+
+        # Create a prompt
+        prompt = iterate_search_prompt.format(
+                    user_answer=user_answer,
+                    messages=messages_str,
+        )
+
+        #invoke the LLM and store the output
+        result = structured_llm.invoke([HumanMessage(content=prompt)])
+
+        # retrieve existing alerts
+        alerts = list(state.get("alerts", []))
+
+        # human-readable assistant message
+        if result.confirmed:
+            ai_chat_msg = AIMessage(content="Let's search once more.")
+        else:   
+            ai_chat_msg = AIMessage(content="Good luck with your research, we have completed the search process.")
+
+        # Goto next node and update State
+        if result.confirmed:
+            return Command(
+                goto="__end__",
+                update={
+                    "confirmed": result.confirmed,
+                }
+            )
+        else:
+            return Command(
+                goto="get_search_queries",
+                update={
+                    "confirmed": result.confirmed,
+                    "search_queries":[],
+                    "messages": [ai_chat_msg],
+                    "next_node": None,
+                },
+            )
