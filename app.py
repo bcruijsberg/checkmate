@@ -27,6 +27,7 @@ from claim_nodes import (
     get_location_source,
     locate_primary_source,
     get_source_queries,
+    confirm_source_queries,
     select_primary_source,
     research_claim,
     critical_question,
@@ -71,6 +72,7 @@ claim.add_node("match_or_continue", match_or_continue)
 claim.add_node("get_source", get_source)
 claim.add_node("get_location_source", get_location_source)
 claim.add_node("get_source_queries", get_source_queries)
+claim.add_node("confirm_source_queries", confirm_source_queries)
 claim.add_node("locate_primary_source", locate_primary_source)
 claim.add_node("select_primary_source", select_primary_source)
 claim.add_node("research_claim", research_claim)
@@ -82,7 +84,7 @@ claim.add_edge("checkable_fact", "critical_question")
 claim.add_edge("retrieve_information", "clarify_information")
 claim.add_edge("produce_summary", "critical_question")
 claim.add_edge("claim_matching", "structure_claim_matching")
-claim.add_edge("get_source_queries", "locate_primary_source")
+claim.add_edge("get_source_queries", "confirm_source_queries")
 claim.add_edge("locate_primary_source", "select_primary_source")
 claim.add_edge("research_claim", END)
 
@@ -224,7 +226,9 @@ if main_prompt:
         )
 
     # Run the graph node flow
-    claim_out = claim_flow.invoke(st.session_state.claim_state)
+    with st.spinner("🔎 Searching for sources and analyzing results..."):
+        claim_out = claim_flow.invoke(st.session_state.claim_state)
+
     handle_graph_output(claim_out)
 
     # Render new AI messages immediately

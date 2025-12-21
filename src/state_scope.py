@@ -7,7 +7,7 @@ from pydantic import BaseModel, Field
 from operator import add as add_messages
 from langgraph.graph.message import MessagesState
 
-
+#initial state for claim checking
 class AgentStateClaim(MessagesState):
     messages: Annotated[List[BaseMessage], add_messages]
     messages_critical: Annotated[List[BaseMessage], add_messages]
@@ -39,6 +39,8 @@ class AgentStateClaim(MessagesState):
     reasoning_summary: Optional[str]
 
 #output models for structured output
+
+# Structured output models for the first nodes, gathering all needed info about the claim
 class SubjectResult(BaseModel):
     checkable: Literal["POTENTIALLY CHECKABLE", "UNCHECKABLE"]
     explanation: str = Field("", description="Explanation for the classification")
@@ -79,19 +81,21 @@ class ConfirmationFinalResult(BaseModel):
 class ConfirmationMatch(BaseModel):
     match: bool = Field(False, description="Whether the user confirmed their was a matching claim")
 
+# Structured output models for the claim matching node
 class QueryItem(BaseModel):
-    query: str
-    reasoning: str
+    query: str = Field("", description="The search query to run")
+    reasoning: str = Field("", description="The reasoning behind this query")
 
 class TopClaim(BaseModel):
-    short_summary: str
-    allowed_url: Optional[str]
-    alignment_rationale: str
+    short_summary: str= Field("", description="A short summary of the claim")
+    allowed_url: Optional[str] = Field(None, description="An allowed URL supporting or refuting the claim")
+    alignment_rationale: str = Field("", description="Rationale for how this claim aligns or conflicts with the user's claim")
 
-class ClaimMatchingOutput(BaseModel):
-    queries: List[QueryItem] 
-    top_claims: List[TopClaim]
+class ClaimMatchingOutput(BaseModel): 
+    queries: List[QueryItem] = Field(..., description="List of search queries with reasoning")
+    top_claims: List[TopClaim] = Field(..., description="Top matching claims from the database")
 
+# Structured output models for primary source identification nodes
 class GetSource(BaseModel):
     claim_source: str = Field("", description="What is the source of this claim?")
     primary_source: bool = Field(False, description="True if the user provided the original/official source")
@@ -99,6 +103,27 @@ class GetSource(BaseModel):
 class GetSourceLocation(BaseModel):
     claim_url: str = Field("", description="The URL of the primary source if available, otherwise ''.")
     source_description: str = Field("", description="Description of the source if no URL is available.")
+
+# Structured output model for search nodes (primary source and final research)
+class GetSourceQueries(BaseModel):
+    search_queries: List[str] = Field(default_factory=list, description="Ordered list of queries to run in Tavily to find the primary source")
+    confirmed: bool = Field(False, description="Whether the user confirmed the search queries")
+
+class SearchResult(BaseModel):
+    title: Optional[str] = Field("", description="Title of the search result")
+    url: Optional[str] = Field("", description="URL of the search result")
+    snippet: Optional[str] = Field("", description="Snippet or summary of the search result")
+    score: Optional[float] = Field(None, description="Relevance score if available")
+
+class TavilySearchOutput(BaseModel):
+    query: str
+    results: List[SearchResult] = Field(default_factory=list)
+
+
+
+
+
+
 
 class PrimarySourcePlan(BaseModel):
     claim_source: str = Field("", description="Best current source for the claim (URL, site, platform, etc.)")

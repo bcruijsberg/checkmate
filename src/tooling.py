@@ -8,6 +8,8 @@ from utils import format_docs
 from langchain_groq import ChatGroq
 from langchain_ollama import ChatOllama
 
+from state_scope import SearchResult, TavilySearchOutput
+
 load_dotenv(".env", override=True)
 
 #  Load the LLM
@@ -43,12 +45,20 @@ retriever = vectorstore.as_retriever()
 # TOOLS
 # ───────────────────────────────────────────────────────────────────────
 @tool
-def tavily_search(query: str) -> str:
+def tavily_search(query: str, max_results: int = 10) -> TavilySearchOutput:
     """Search the web with Tavily and return JSON-like results."""
     if not query.strip():
-        return "No query provided."
-    resp = tavily_client.search(query=query, max_results=5, search_depth="advanced")
-    return json.dumps(resp, indent=2)
+        return TavilySearchOutput(query=query, results=[], error="No query provided.")
+
+    resp = tavily_client.search(query=query, max_results=max_results, search_depth="advanced")
+    results = [
+        SearchResult(
+            title=r.get("title"),
+            url=r.get("url"),
+        )
+        for r in resp.get("results", [])
+    ]
+    return TavilySearchOutput(query=query, results=results)
 
 
 @tool

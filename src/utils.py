@@ -1,6 +1,7 @@
 from newspaper import Article
 from typing_extensions import List, Optional
 from langchain_core.messages import BaseMessage,AIMessage,HumanMessage
+from urllib.parse import urlparse
 
 # ────────────────────────────────────────────────────────────
 # HELPER FUNCTION TO FETCH FULL ARTICLE CONTENT
@@ -67,3 +68,13 @@ def get_new_user_reply(messages: List[BaseMessage]) -> Optional[str]:
     if last_h > last_a:
         return messages[last_h].content
     return None
+
+# ────────────────────────────────────────────────────────────
+# HELPER FUNCTION TO RETRIEVE DOMAIN FROM URL
+# ────────────────────────────────────────────────────────────
+from urllib.parse import urlparse
+def _domain(url: str) -> str:
+    try:
+        return urlparse(url).netloc.lower()
+    except Exception:
+        return ""
