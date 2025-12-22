@@ -27,9 +27,9 @@ class AgentStateClaim(MessagesState):
     explanation: Optional[str]
     next_node: Optional[str]
     tool_trace: Optional[str]
+    rag_trace: Annotated[List[Dict[str, Any]], operator.add]
     claim_matching_result: Optional[str]
     search_queries:  List[str] = Field(default_factory=list)
-    #tavily_context: Optional[str]
     tavily_context: Annotated[List[Dict[str, Any]], operator.add]
     current_query: str
     research_focus: Optional[str]

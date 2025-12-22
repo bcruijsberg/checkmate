@@ -8,7 +8,7 @@ from prompts import (
     confirmation_clarification_prompt,
     get_summary_prompt,
     confirmation_check_prompt,
-    retrieve_claims_prompt,
+    rag_queries_prompt,
     match_check_prompt,
     structure_claim_prompt,
     identify_source_prompt,
@@ -34,7 +34,8 @@ from state_scope import (
     GetSearchQueries,
     PrimarySourceSelection, 
 )
-from langchain_core.messages import BaseMessage,HumanMessage,AIMessage, ToolMessage,get_buffer_string
+from langgraph.types import Overwrite
+from langchain_core.messages import BaseMessage,HumanMessage,AIMessage, ToolMessage, get_buffer_string
 from typing import List, Dict, Any, Literal
 from langgraph.graph import StateGraph, START, END
 from langgraph.graph.message import add_messages
@@ -58,7 +59,11 @@ def router(state: AgentStateClaim) -> Command[
         "produce_summary",
         "critical_question",
         "get_confirmation",
-        "claim_matching",
+        "get_rag_queries",
+        "confirm_rag_queries",
+        "rag_retrieve_worker",
+        "reduce_rag_results",
+        "structure_claim_matching",
         "match_or_continue",
         "get_source",
         "get_location_source",
@@ -119,7 +124,7 @@ def critical_question(state: AgentStateClaim) -> Command[Literal["checkable_conf
 # CHECKABLE_FACT NODE
 # ───────────────────────────────────────────────────────────────────────
 
-def checkable_fact(state: AgentStateClaim) -> Command[Literal["checkable_confirmation"]]:
+def checkable_fact(state: AgentStateClaim) -> Command[Literal["critical_question"]]:
 
     """ Check if a claim is potentially checkable. """
 
@@ -395,7 +400,7 @@ def clarify_information(state: AgentStateClaim) -> Command[Literal["produce_summ
 # PRODUCE SUMMARY NODE
 # ───────────────────────────────────────────────────────────────────────
 
-def produce_summary(state: AgentStateClaim) -> Command[Literal["get_confirmation"]]:
+def produce_summary(state: AgentStateClaim) -> Command[Literal["critical_question"]]:
 
     """ Get a summary on the gathered information. """
 
@@ -499,7 +504,7 @@ def get_confirmation(state: AgentStateClaim) -> Command[Literal["produce_summary
         # Goto next node and update State
         if result.confirmed:
             return Command(
-                    goto="claim_matching", 
+                    goto="get_rag_queries", 
                     update={
                         "confirmed": result.confirmed,
                         "subject": result.subject,
@@ -528,68 +533,173 @@ def get_confirmation(state: AgentStateClaim) -> Command[Literal["produce_summary
                     }
             )
   
-
 # ───────────────────────────────────────────────────────────────────────
-# CLAIM MATCHING NODE
+# GENERATE QUERIES FOR CLAIM MATCHING NODE
 # ───────────────────────────────────────────────────────────────────────
-def claim_matching(state: AgentStateClaim) -> Command[Literal["structure_claim_matching"]]:
-   
-    """Call the retriever tool iteratively to find if similar claims have already been researched."""
+def get_rag_queries(state: AgentStateClaim) -> Command[Literal["confirm_rag_queries"]]:
 
-    #Retrieve conversation history
+    """ Generate queries to locate the primary source of the claim. """
+
+    # retrieve conversation history
     conversation_history = list(state.get("messages", []))
 
-    # Add the last messages into a string for the prompt
-    recent_messages = conversation_history[-MAX_HISTORY_MESSAGES:]
+    # Add the last message into a string for the prompt
+    recent_messages = conversation_history[-MAX_HISTORY_MESSAGES:]  # tune this number
     messages_str = get_buffer_string(recent_messages)
 
-    # Prompt
-    prompt = retrieve_claims_prompt.format(
+    # Use structured output
+    structured_llm = llm.with_structured_output(GetSearchQueries, method="json_mode")
+
+    # Create a prompt
+    prompt  = rag_queries_prompt.format(
         summary=state.get("summary", ""),
         subject=state.get("subject", ""),
         messages=messages_str,
     )
 
-    human = HumanMessage(content=prompt)
-    result = llm_tools.invoke([human])
+    #invoke the LLM and store the output
+    result = structured_llm.invoke([HumanMessage(content=prompt)])
 
-    # Store tool call trace
-    tool_trace: list = [] 
+    # create a human-readable assistant message for the chat
+    queries_text = "\n".join(f"- {q}" for q in result.search_queries if q)
+    chat_text = (
+        "I will perform a search with these queries, would you like to add or change something?\n"
+        f"{queries_text}"
+    )
 
-    while getattr(result, "tool_calls", None):
-        tool_msgs: List[ToolMessage] = []
+    ai_chat_msg = AIMessage(content=chat_text)
 
-        for t in result.tool_calls:
-            name = t["name"]
-            args = t.get("args") or {}
-            out = tools_dict[name].invoke(args)
-
-            # Keep a simple trace for the next node
-            tool_trace.append(
-                {
-                    "tool_name": name,
-                    "args": args,
-                    "output": out,
-                }
-            )
-
-            tool_msgs.append(
-                ToolMessage(
-                    tool_call_id=t["id"],
-                    name=name,
-                    content=str(out),
-                )
-            )
-
-        result = llm_tools.invoke([human, result, *tool_msgs])
-
-    # Goto next node and update State
+    # Goto next node and update State  
     return Command(
-        goto="structure_claim_matching",   # <-- next node
+        goto="confirm_rag_queries", 
         update={
-            "tool_trace": tool_trace,      # <-- raw info for Node 2
+            "search_queries": result.search_queries,
+            "messages":  [ai_chat_msg],
+            "next_node": None,
+            "awaiting_user": True,
+            "confirmed":False,
+        }
+    )    
+
+# ───────────────────────────────────────────────────────────────────────
+# CONFIRM CLAIM MATCHING QUERIES NODE
+# ───────────────────────────────────────────────────────────────────────
+def confirm_rag_queries(state: AgentStateClaim) -> dict:
+    
+    """Update state based on user confirmation. Routing is handled by a router."""
+
+    if state.get("awaiting_user"):
+        # pause for user
+        return {
+            "next_node": "confirm_rag_queries",
             "awaiting_user": False,
-        },
+        }
+    else:
+        # retrieve conversation history
+        conversation_history = list(state.get("messages", []))
+        user_answer = get_new_user_reply(conversation_history)
+
+        # retrieve search_queries and format to string for the prompt
+        search_queries = state.get("search_queries", [])
+        search_queries_str= "\n".join(f"- {a}" for a in search_queries)
+
+        # Use structured output
+        structured_llm = llm.with_structured_output(GetSearchQueries, method="json_mode")
+
+        # Create a prompt
+        prompt  =  confirm_queries_prompt.format(
+            search_queries=search_queries_str,
+            user_answer=user_answer,
+        )
+
+        #invoke the LLM and store the output
+        result = structured_llm.invoke([HumanMessage(content=prompt)])
+
+         # human-readable assistant message for the chat
+        queries_text = "\n".join(f"- {q}" for q in result.search_queries if q)
+        if result.confirmed:
+            confirm_text = "We search the Claims database with these queries.\n" + queries_text
+        else:
+            confirm_text = (
+                "Is there anything else you would like to change about the search queries?\n"
+                f"{queries_text}"
+            )
+
+        ai_chat_msg = AIMessage(content=confirm_text)
+
+        # Goto next node and update State
+        return {
+            "confirmed": result.confirmed,
+            "search_queries": result.search_queries,
+            "messages": [ai_chat_msg],
+            "next_node": None,
+            "awaiting_user": (not result.confirmed),
+        }
+# ───────────────────────────────────────────────────────────────────────
+# ROUTER CLAIM MATCHING NODE
+# ───────────────────────────────────────────────────────────────────────
+
+def route_rag_confirm(state: AgentStateClaim):
+
+    """ Route based on user confirmation of RAG queries. """
+
+    # retrieve search queries
+    q = state.get("search_queries", [])
+    if state.get("next_node") == "confirm_rag_queries":
+        return "__end__"
+
+    # If not confirmed, go back to get_rag_queries
+    if not state.get("confirmed", False):
+        return "confirm_rag_queries"
+
+    # If confirmed, proceed to retrieval
+    return [
+        Send("rag_retrieve_worker", {"current_query": q})
+        for q in state.get("search_queries", [])
+        if q
+    ]
+
+# ───────────────────────────────────────────────────────────────────────
+# WORKER CLAIM MATCHING NODE
+# ───────────────────────────────────────────────────────────────────────
+
+async def rag_retrieve_worker(state: AgentStateClaim) -> Dict[str, Any]:
+    """ Perform retrieval for a given query. """
+
+    # Get the current query from state
+    q = state["current_query"]
+
+    # Call the retriever tool
+    retriever_tool = tools_dict["retriever_tool"] 
+    out = await retriever_tool.ainvoke({"query": q, "k": 10})  
+
+    # Return the RAG trace entry
+    return {
+        "rag_trace": [{
+            "tool_name": "retriever_tool",
+            "args": {"query": q, "k": 10},
+            "output": out,
+        }]
+    }
+
+# ───────────────────────────────────────────────────────────────────────
+# REDUCER CLAIM MATCHING NODE
+# ───────────────────────────────────────────────────────────────────────
+
+def reduce_rag_results(state: AgentStateClaim) -> Command[Literal["structure_claim_matching"]]:
+
+    """ Reduce the RAG retrieval results into a single trace. """
+
+    # Retrieve RAG traces from state
+    rag_trace = state.get("rag_trace", [])
+
+    # Combine all RAG traces into one
+    return Command(
+        goto="structure_claim_matching",
+        update={
+            "tool_trace": rag_trace,   # so your structure_claim_matching stays the same
+            "awaiting_user": False,
+        }
     )
 
 # ───────────────────────────────────────────────────────────────────────
@@ -599,11 +709,6 @@ def claim_matching(state: AgentStateClaim) -> Command[Literal["structure_claim_m
 def structure_claim_matching(state: AgentStateClaim) -> Command[Literal["match_or_continue","get_source"]]:
    
     """Take the raw retrieval trace and turn it into structured output."""
-
-    # Retrieve context
-    summary = state.get("summary", "")
-    subject = state.get("subject", "")
-    tool_trace = state.get("tool_trace", [])
 
       # Use structured output
     structured_llm = llm.with_structured_output(ClaimMatchingOutput, method="json_mode")
@@ -623,20 +728,20 @@ def structure_claim_matching(state: AgentStateClaim) -> Command[Literal["match_o
     explanation_lines.append("**Claim matching results**")
     explanation_lines.append("")  # blank line
 
-    # Show the queries + reasoning
-    if result.queries:
-        explanation_lines.append("Here are the search questions that were used (or would be appropriate) to look for similar claims:")
-        for i, q in enumerate(result.queries, start=1):
-            explanation_lines.append(f"- **Q{i}:** {q.query}")
-            explanation_lines.append(f"  - Why this query: {q.reasoning}")
-        explanation_lines.append("")  # blank line
+    # # Show the queries + reasoning
+    # if result.queries:
+    #     explanation_lines.append("Here are the search questions that were used (or would be appropriate) to look for similar claims:")
+    #     for i, q in enumerate(result.queries, start=1):
+    #         explanation_lines.append(f"- **Q{i}:** {q.query}")
+    #         explanation_lines.append(f"  - Why this query: {q.reasoning}")
+    #     explanation_lines.append("")  # blank line
 
     # Show the top claims
     if result.top_claims:
         explanation_lines.append("From the retrieved information, these existing claims might be relevant to what you're investigating:")
         for i, c in enumerate(result.top_claims, start=1):
             # URL line only if present
-            url_part = f"\n  - Source: {c.allowed_url}" if c.allowed_url else ""
+            url_part = f"\n  - {c.allowed_url}" if c.allowed_url else ""
             explanation_lines.append(f"- **Claim {i}:** {c.short_summary}{url_part}")
             explanation_lines.append(f"  - How it aligns or differs from your claim: {c.alignment_rationale}")
         explanation_lines.append("")  # blank line
@@ -668,7 +773,6 @@ def structure_claim_matching(state: AgentStateClaim) -> Command[Literal["match_o
                 "next_node": "get_source",
             }
         )
-
 
 # ───────────────────────────────────────────────────────────────────────
 # MATCHED OR CONTUE RESEARCH NODE
@@ -903,7 +1007,7 @@ def get_location_source(state: AgentStateClaim) -> Command[Literal["get_search_q
 # ───────────────────────────────────────────────────────────────────────
 # GENERATE QUERIES TO LOCATE PRIMARY SOURCE NODE
 # ───────────────────────────────────────────────────────────────────────
-def get_source_queries(state: AgentStateClaim) -> Command[Literal["confirm_search_queries"]]:
+def get_source_queries(state: AgentStateClaim) -> Command[Literal["critical_question"]]:
 
     """ Generate queries to locate the primary source of the claim. """
 
@@ -941,11 +1045,11 @@ def get_source_queries(state: AgentStateClaim) -> Command[Literal["confirm_searc
 
     # Goto next node and update State  
     return Command(
-        goto="confirm_search_queries", 
+        goto="critical_question", 
         update={
             "search_queries": result.search_queries,
             "messages":  [ai_chat_msg],
-            "next_node": None,
+            "next_node": "confirm_search_queries",
             "awaiting_user": True,
             "confirmed":False,
             "research_focus": "select_primary_source",
@@ -1010,16 +1114,20 @@ def confirm_search_queries(state: AgentStateClaim) -> dict:
 # ───────────────────────────────────────────────────────────────────────
 # RESET THE SEARCH STATE NODE
 # ───────────────────────────────────────────────────────────────────────
-from langgraph.types import Overwrite
 
 def reset_search_state(state: AgentStateClaim):
-    return {"tavily_context": Overwrite([])}
+    return {
+        "tavily_context": Overwrite([]),
+        }
 
 # ───────────────────────────────────────────────────────────────────────
 # FIND SOURCES ORCHESTRATOR NODE
 # ───────────────────────────────────────────────────────────────────────
 
 def route_after_confirm(state: AgentStateClaim):
+
+    """ Route based on user confirmation of search queries. """
+
     # If we need to stop and wait for user input
     if state.get("next_node") == "confirm_search_queries":
         return "__end__"
@@ -1038,9 +1146,8 @@ def route_after_confirm(state: AgentStateClaim):
 # ───────────────────────────────────────────────────────────────────────
 # FIND SOURCES WORKER NODE
 # ───────────────────────────────────────────────────────────────────────
-from typing import Any, Dict, List
 
-def find_sources_worker(state: AgentStateClaim) -> Dict[str, Any]:
+async def find_sources_worker(state: AgentStateClaim) -> Dict[str, Any]:
 
     """Worker: run Tavily for one query, return one compact result block."""
 
@@ -1048,7 +1155,7 @@ def find_sources_worker(state: AgentStateClaim) -> Dict[str, Any]:
     q = state["current_query"]
     tavily_tool = tools_dict.get("tavily_search")
 
-    tool_output = tavily_tool.invoke({"query": q, "max_results": 18})
+    tool_output = await tavily_tool.ainvoke({"query": q, "max_results": 18})
     out_dict = tool_output.model_dump() if hasattr(tool_output, "model_dump") else dict(tool_output)
 
     compact = {"query": out_dict.get("query", q), "results": []}
@@ -1070,11 +1177,9 @@ def find_sources_worker(state: AgentStateClaim) -> Dict[str, Any]:
 # FIND SOURCES REDUCER NODE
 # ───────────────────────────────────────────────────────────────────────
 
-from typing import Any, Dict, List
-
 def reduce_sources(state: AgentStateClaim) -> Command[Literal["select_primary_source", "iterate_search"]]:
 
-    """Fan in: merge worker outputs, enforce diversity across queries, build message."""
+    """Merge worker outputs, enforce diversity across queries, build message."""
 
     # Retrieve all tavily results from the worker outputs
     tavily_results = state.get("tavily_context", [])
@@ -1150,8 +1255,6 @@ def reduce_sources(state: AgentStateClaim) -> Command[Literal["select_primary_so
             "search_queries":[],
         },
     )
-
-
 # ───────────────────────────────────────────────────────────────────────
 # SELECT PRIMARY SOURCE
 # ───────────────────────────────────────────────────────────────────────
@@ -1231,7 +1334,7 @@ def select_primary_source(state: AgentStateClaim) -> Command[Literal["get_search
 # ───────────────────────────────────────────────────────────────────────
 # GENERATE QUERIES TO FALSIFY OR VERIFY CLAIM NODE
 # ───────────────────────────────────────────────────────────────────────
-def get_search_queries(state: AgentStateClaim) -> Command[Literal["confirm_search_queries"]]:
+def get_search_queries(state: AgentStateClaim) -> Command[Literal["critical_question"]]:
 
     """ Generate queries to locate the primary source of the claim. """
 
@@ -1274,11 +1377,11 @@ def get_search_queries(state: AgentStateClaim) -> Command[Literal["confirm_searc
 
     # Goto next node and update State  
     return Command(
-        goto="confirm_search_queries", 
+        goto="critical_question", 
         update={
             "search_queries": result.search_queries,
             "messages":  [ai_chat_msg],
-            "next_node": None,
+            "next_node": "confirm_search_queries",
             "awaiting_user": True,
             "confirmed":False,
             "research_focus": "iterate_search",
@@ -1336,13 +1439,6 @@ def iterate_search(state: AgentStateClaim) -> Command[Literal["get_search_querie
         # Goto next node and update State
         if result.confirmed:
             return Command(
-                goto="__end__",
-                update={
-                    "confirmed": result.confirmed,
-                }
-            )
-        else:
-            return Command(
                 goto="get_search_queries",
                 update={
                     "confirmed": result.confirmed,
@@ -1350,3 +1446,12 @@ def iterate_search(state: AgentStateClaim) -> Command[Literal["get_search_querie
                     "next_node": None,
                 },
             )
+        else:
+            return Command(
+                goto="__end__",
+                update={
+                    "confirmed": result.confirmed,
+                    "messages": [ai_chat_msg],
+                }
+            )
+            

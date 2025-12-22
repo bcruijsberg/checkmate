@@ -20,7 +20,11 @@ from claim_nodes import (
     clarify_information,
     produce_summary,
     get_confirmation,
-    claim_matching,
+    get_rag_queries,
+    confirm_rag_queries,
+    route_rag_confirm,
+    rag_retrieve_worker,
+    reduce_rag_results,
     structure_claim_matching,
     match_or_continue,
     get_source,
@@ -36,6 +40,7 @@ from claim_nodes import (
     iterate_search,
     critical_question,
 )
+import asyncio
 from langgraph.graph import StateGraph, START, END
 from state_scope import AgentStateClaim
 from langchain_core.messages import HumanMessage, AIMessage
@@ -63,6 +68,7 @@ st.markdown("""
 
 claim = StateGraph(AgentStateClaim)
 
+#getting all info about the claim nodes
 claim.add_node("checkable_fact", checkable_fact)
 claim.add_node("checkable_confirmation", checkable_confirmation)
 claim.add_node("retrieve_information", retrieve_information)
@@ -70,9 +76,16 @@ claim.add_node("clarify_information", clarify_information)
 claim.add_node("produce_summary", produce_summary)
 claim.add_node("get_confirmation", get_confirmation)
 claim.add_node("critical_question", critical_question)
-claim.add_node("claim_matching", claim_matching)
+
+#Claim matching nodes
+claim.add_node("get_rag_queries", get_rag_queries)
+claim.add_node("confirm_rag_queries", confirm_rag_queries)
+claim.add_node("rag_retrieve_worker", rag_retrieve_worker)
+claim.add_node("reduce_rag_results", reduce_rag_results)
 claim.add_node("structure_claim_matching", structure_claim_matching)
 claim.add_node("match_or_continue", match_or_continue)
+
+# Source finding nodes and search query nodes
 claim.add_node("get_source", get_source)
 claim.add_node("get_location_source", get_location_source)
 claim.add_node("get_source_queries", get_source_queries)
@@ -90,8 +103,16 @@ claim.add_edge(START, "router")
 claim.add_edge("checkable_fact", "critical_question")
 claim.add_edge("retrieve_information", "clarify_information")
 claim.add_edge("produce_summary", "critical_question")
-claim.add_edge("claim_matching", "structure_claim_matching")
-claim.add_edge("get_search_queries", "confirm_search_queries")
+
+# Connecting claim matching nodes
+claim.add_edge("get_rag_queries", "confirm_rag_queries")
+claim.add_conditional_edges("confirm_rag_queries", route_rag_confirm)
+claim.add_edge("rag_retrieve_worker", "reduce_rag_results")
+claim.add_edge("reduce_rag_results", "structure_claim_matching")
+
+# Connecting source finding and search query nodes
+claim.add_edge("get_source_queries", "critical_question")
+claim.add_edge("get_search_queries", "critical_question")
 claim.add_edge("confirm_search_queries", "reset_search_state")
 claim.add_conditional_edges("reset_search_state", route_after_confirm)
 claim.add_edge("find_sources_worker", "reduce_sources")
@@ -158,6 +179,7 @@ if "claim_state" not in st.session_state:
         "awaiting_user": False,
         "explanation": None,
         "tool_trace":None,
+        "rag_trace": [],
         "next_node": None,
         "search_queries": [],
         "tavily_context": [],
@@ -235,7 +257,7 @@ if main_prompt:
 
     # Run the graph node flow
     with st.spinner("🔎 Searching for sources and analyzing results..."):
-        claim_out = claim_flow.invoke(st.session_state.claim_state)
+        claim_out = asyncio.run(claim_flow.ainvoke(st.session_state.claim_state))
 
     handle_graph_output(claim_out)
 
