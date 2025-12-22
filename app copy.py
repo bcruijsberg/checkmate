@@ -28,10 +28,7 @@ from claim_nodes import (
     get_source_queries,
     get_search_queries,
     confirm_search_queries,
-    reset_search_state,
-    route_after_confirm,
-    find_sources_worker,
-    reduce_sources,
+    find_sources,
     select_primary_source,
     iterate_search,
     critical_question,
@@ -77,9 +74,7 @@ claim.add_node("get_source", get_source)
 claim.add_node("get_location_source", get_location_source)
 claim.add_node("get_source_queries", get_source_queries)
 claim.add_node("confirm_search_queries", confirm_search_queries)
-claim.add_node("reset_search_state", reset_search_state)
-claim.add_node("find_sources_worker", find_sources_worker)
-claim.add_node("reduce_sources", reduce_sources)
+claim.add_node("find_sources", find_sources)
 claim.add_node("select_primary_source", select_primary_source)
 claim.add_node("get_search_queries", get_search_queries)
 claim.add_node("iterate_search",iterate_search)
@@ -92,9 +87,6 @@ claim.add_edge("retrieve_information", "clarify_information")
 claim.add_edge("produce_summary", "critical_question")
 claim.add_edge("claim_matching", "structure_claim_matching")
 claim.add_edge("get_search_queries", "confirm_search_queries")
-claim.add_edge("confirm_search_queries", "reset_search_state")
-claim.add_conditional_edges("reset_search_state", route_after_confirm)
-claim.add_edge("find_sources_worker", "reduce_sources")
 
 claim_flow = claim.compile()
 
@@ -160,8 +152,7 @@ if "claim_state" not in st.session_state:
         "tool_trace":None,
         "next_node": None,
         "search_queries": [],
-        "tavily_context": [],
-        "current_query": None,
+        "tavily_context": None,
         "research_focus": None,
         "claim_url": None,
         "claim_source": None,

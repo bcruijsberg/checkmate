@@ -38,7 +38,7 @@ from langchain_core.messages import BaseMessage,HumanMessage,AIMessage, ToolMess
 from typing import List, Dict, Any, Literal
 from langgraph.graph import StateGraph, START, END
 from langgraph.graph.message import add_messages
-from langgraph.types import Command, Send
+from langgraph.types import Command
 from utils import get_new_user_reply,_domain
 from tooling import llm, llm_tools, llm_tuned, tools_dict
 import json
@@ -64,6 +64,7 @@ def router(state: AgentStateClaim) -> Command[
         "get_location_source",
         "get_source_queries",
         "confirm_search_queries",
+        "find_sources",
         "select_primary_source",
         "iterate_search",
         ]
@@ -955,16 +956,19 @@ def get_source_queries(state: AgentStateClaim) -> Command[Literal["confirm_searc
 # ───────────────────────────────────────────────────────────────────────
 # CONFIRM SEARCH QUERIES NODE
 # ───────────────────────────────────────────────────────────────────────
-def confirm_search_queries(state: AgentStateClaim) -> dict:
-    
-    """Update state based on user confirmation. Routing is handled by a router."""
+def confirm_search_queries(state: AgentStateClaim) -> Command[Literal["find_sources","confirm_search_queries"]]:
+
+    """ Get confirmation from user on the gathered information."""
 
     if state.get("awaiting_user"):
-        # pause for user
-        return {
-            "next_node": "confirm_search_queries",
-            "awaiting_user": False,
-        }
+
+        return Command(
+            goto="__end__", 
+            update={
+                "next_node": "confirm_search_queries",
+                "awaiting_user": False,
+            },
+        )
     else:
         # retrieve conversation history
         conversation_history = list(state.get("messages", []))
@@ -999,122 +1003,86 @@ def confirm_search_queries(state: AgentStateClaim) -> dict:
         ai_chat_msg = AIMessage(content=confirm_text)
 
         # Goto next node and update State
-        return {
-            "confirmed": result.confirmed,
-            "search_queries": result.search_queries,
-            "messages": [ai_chat_msg],
-            "next_node": None,
-            "awaiting_user": (not result.confirmed),
-        }
+        if result.confirmed:
+            return Command(
+                    goto="find_sources", 
+                    update={
+                        "confirmed": result.confirmed,
+                        "search_queries": result.search_queries,
+                        "messages": [ai_chat_msg],
+                        "next_node": None,
+                    }
+            )       
+        else:
+            return Command(
+                    goto="confirm_search_queries", 
+                    update={
+                        "search_queries": result.search_queries,
+                        "messages": [ai_chat_msg],
+                        "awaiting_user": True,
+                        "next_node": None,
+                    }
+            )
 
 # ───────────────────────────────────────────────────────────────────────
-# RESET THE SEARCH STATE NODE
-# ───────────────────────────────────────────────────────────────────────
-from langgraph.types import Overwrite
-
-def reset_search_state(state: AgentStateClaim):
-    return {"tavily_context": Overwrite([])}
-
-# ───────────────────────────────────────────────────────────────────────
-# FIND SOURCES ORCHESTRATOR NODE
+# FIND SOURCES NODE
 # ───────────────────────────────────────────────────────────────────────
 
-def route_after_confirm(state: AgentStateClaim):
-    # If we need to stop and wait for user input
-    if state.get("next_node") == "confirm_search_queries":
-        return "__end__"
+def find_sources(state: AgentStateClaim) -> Command[Literal["select_primary_source"]]:
 
-    # If user hasn't confirmed, loop
-    if not state.get("confirmed", False):
-        return "confirm_search_queries"
+    """Run Tavily for each prepared query and store structured results with diversity."""
 
-    # Confirmed => fan out to workers
-    return [
-        Send("find_sources_worker", {"current_query": q})
-        for q in state.get("search_queries", [])
-        if q
-    ]
+    search_queries = state.get("search_queries", [])
+    tavily_results: List[Dict[str, Any]] = []
+    new_msgs: List[BaseMessage] = []
 
-# ───────────────────────────────────────────────────────────────────────
-# FIND SOURCES WORKER NODE
-# ───────────────────────────────────────────────────────────────────────
-from typing import Any, Dict, List
-
-def find_sources_worker(state: AgentStateClaim) -> Dict[str, Any]:
-
-    """Worker: run Tavily for one query, return one compact result block."""
-
-    # Run tavily search for the current query, get top 18 results
-    q = state["current_query"]
     tavily_tool = tools_dict.get("tavily_search")
 
-    tool_output = tavily_tool.invoke({"query": q, "max_results": 18})
-    out_dict = tool_output.model_dump() if hasattr(tool_output, "model_dump") else dict(tool_output)
-
-    compact = {"query": out_dict.get("query", q), "results": []}
-
-    # Add the top 9 results only to the compact Dictionary
-    for r in (out_dict.get("results") or []):
-        r = r.model_dump() if hasattr(r, "model_dump") else dict(r)
-        url = (r.get("url") or "").strip()
-        if not url:
-            continue
-        compact["results"].append({"title": r.get("title"), "url": url})
-        if len(compact["results"]) >= 9:
-            break
-
-    # Return and wrap in a list so it merges via operator.add
-    return {"tavily_context": [compact]}
-
-# ───────────────────────────────────────────────────────────────────────
-# FIND SOURCES REDUCER NODE
-# ───────────────────────────────────────────────────────────────────────
-
-from typing import Any, Dict, List
-
-def reduce_sources(state: AgentStateClaim) -> Command[Literal["select_primary_source", "iterate_search"]]:
-
-    """Fan in: merge worker outputs, enforce diversity across queries, build message."""
-
-    # Retrieve all tavily results from the worker outputs
-    tavily_results = state.get("tavily_context", [])
-
-    # remember used urls and domains to enforce diversity
+    # Track what we've already used across all queries
     used_urls = set()
     used_domains = set()
-    final_blocks: List[Dict[str, Any]] = []
 
-    # Deduplicate across queries, and set limit to 3 results per query
-    for block in tavily_results:
-        query = block.get("query")
-        results = block.get("results", [])
-        if not results:
-            continue
+    # Run each query
+    for q in search_queries:
+        tool_output = tavily_tool.invoke({"query": q, "max_results": 12})
+        out_dict = tool_output.model_dump() if hasattr(tool_output, "model_dump") else dict(tool_output)
 
-        compact = {"query": query, "results": []}
-        for r in results:
+        compact = {"query": out_dict.get("query", q), "results": []}
+
+        # Iterate through more results, but select only diverse ones
+        for r in (out_dict.get("results") or []):
+            r = r.model_dump() if hasattr(r, "model_dump") else dict(r)
+
             url = (r.get("url") or "").strip()
             if not url:
                 continue
+
             dom = _domain(url)
 
+            # Enforce diversity: skip URLs/domains already used
             if url in used_urls or dom in used_domains:
                 continue
 
-            compact["results"].append({"title": r.get("title"), "url": url})
+            # Add the dict to compact results
+            compact["results"].append({
+                "title": r.get("title"),
+                "url": url,
+            })
+
             used_urls.add(url)
             used_domains.add(dom)
 
+            # Limit to 3 results per query
             if len(compact["results"]) >= 3:
                 break
 
-        final_blocks.append(compact)
+        tavily_results.append(compact)
 
-    # Human-readable assistant message for the chat
+    # Build message
     lines = ["Here are the top results I found for each search query:", ""]
-    startnr = 1
-    
-    for block in final_blocks:
+    startnr=1
+
+    for block in tavily_results:
         query = block.get("query")
         results = block.get("results", [])
         if not results:
@@ -1132,22 +1100,23 @@ def reduce_sources(state: AgentStateClaim) -> Command[Literal["select_primary_so
             lines.append(f"{i}. **[{title}]({url})**")
         startnr += len(results)
   
-    new_msgs = [AIMessage(content="\n".join(lines))]
+    new_msgs.append(AIMessage(content="\n".join(lines)))
 
-    # Decide next node based on research focus
+    #check if this search is for locating primary source or general research
     research_focus = state.get("research_focus")
-    state_next_node = "select_primary_source" if research_focus == "select_primary_source" else "iterate_search"
-    
+    if research_focus == "select_primary_source":
+        state_next_node = "select_primary_source"
+    else:
+        state_next_node = "iterate_search"
+
     # Goto next node and update State
     return Command(
         goto=state_next_node,
         update={
-            # overwrite with the finalized/deduped set for downstream nodes
-            "tavily_context": final_blocks,
+            "tavily_context": tavily_results,
             "messages": new_msgs,
             "awaiting_user": True,
             "next_node": None,
-            "search_queries":[],
         },
     )
 
@@ -1346,6 +1315,7 @@ def iterate_search(state: AgentStateClaim) -> Command[Literal["get_search_querie
                 goto="get_search_queries",
                 update={
                     "confirmed": result.confirmed,
+                    "search_queries":[],
                     "messages": [ai_chat_msg],
                     "next_node": None,
                 },

@@ -1,7 +1,8 @@
 
 """ State Definitions and Pydantic Schemas for testing if a claim is checkable. """
 
-from typing_extensions import Annotated, Literal, List, Optional
+import operator
+from typing import Annotated, Literal, List, Optional, Dict, Any
 from langchain_core.messages import BaseMessage
 from pydantic import BaseModel, Field
 from operator import add as add_messages
@@ -28,7 +29,9 @@ class AgentStateClaim(MessagesState):
     tool_trace: Optional[str]
     claim_matching_result: Optional[str]
     search_queries:  List[str] = Field(default_factory=list)
-    tavily_context: Optional[str]
+    #tavily_context: Optional[str]
+    tavily_context: Annotated[List[Dict[str, Any]], operator.add]
+    current_query: str
     research_focus: Optional[str]
     claim_url: Optional[str]
     claim_source: Optional[str]
