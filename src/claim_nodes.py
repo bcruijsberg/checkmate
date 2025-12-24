@@ -227,7 +227,6 @@ def checkable_confirmation(state: AgentStateClaim) -> Command[Literal["retrieve_
                 return Command(
                         goto="retrieve_information", 
                         update={
-                            "confirmed": result.confirmed,
                             "messages": [ai_chat_msg],
                             "awaiting_user": False,
                             "additional_context": None,
@@ -240,7 +239,6 @@ def checkable_confirmation(state: AgentStateClaim) -> Command[Literal["retrieve_
                 return Command(
                         goto=END, 
                         update={
-                            "confirmed": result.confirmed,
                             "messages": [ai_chat_msg] + [end_msg],
                             "awaiting_user": False,
                             "next_node": None
@@ -380,10 +378,10 @@ def clarify_information(state: AgentStateClaim) -> Command[Literal["produce_summ
             return Command(
                     goto="produce_summary", 
                     update={
-                        "confirmed": result.confirmed,
                         "messages": [ai_chat_msg],
                         "additional_context": None,
                         "next_node": None,
+                        "confirmed": False,
                     }
             )       
         else:
@@ -461,7 +459,7 @@ def produce_summary(state: AgentStateClaim) -> Command[Literal["critical_questio
 # GET_CONFIRMATION NODE
 # ───────────────────────────────────────────────────────────────────────
    
-def get_confirmation(state: AgentStateClaim) -> Command[Literal["produce_summary", "critical_question"]]:
+def get_confirmation(state: AgentStateClaim) -> Command[Literal["produce_summary", "get_rag_queries"]]:
 
     """ Get confirmation from user on the gathered information."""
 
@@ -506,7 +504,6 @@ def get_confirmation(state: AgentStateClaim) -> Command[Literal["produce_summary
             return Command(
                     goto="get_rag_queries", 
                     update={
-                        "confirmed": result.confirmed,
                         "subject": result.subject,
                         "quantitative": result.quantitative,
                         "precision": result.precision,
@@ -577,7 +574,6 @@ def get_rag_queries(state: AgentStateClaim) -> Command[Literal["confirm_rag_quer
             "messages":  [ai_chat_msg],
             "next_node": None,
             "awaiting_user": True,
-            "confirmed":False,
         }
     )    
 
@@ -618,7 +614,7 @@ def confirm_rag_queries(state: AgentStateClaim) -> dict:
          # human-readable assistant message for the chat
         queries_text = "\n".join(f"- {q}" for q in result.search_queries if q)
         if result.confirmed:
-            confirm_text = "We search the Claims database with these queries.\n" + queries_text
+            confirm_text = "From the retrieved information, these existing claims might be relevant to what you're investigating.\n"
         else:
             confirm_text = (
                 "Is there anything else you would like to change about the search queries?\n"
@@ -629,7 +625,7 @@ def confirm_rag_queries(state: AgentStateClaim) -> dict:
 
         # Goto next node and update State
         return {
-            "confirmed": result.confirmed,
+            "queries_confirmed": result.confirmed,
             "search_queries": result.search_queries,
             "messages": [ai_chat_msg],
             "next_node": None,
@@ -643,16 +639,16 @@ def route_rag_confirm(state: AgentStateClaim):
 
     """ Route based on user confirmation of RAG queries. """
 
-    # retrieve search queries
-    q = state.get("search_queries", [])
+    # If we need to stop and wait for user input, after firing a critical question
     if state.get("next_node") == "confirm_rag_queries":
         return "__end__"
 
     # If not confirmed, go back to get_rag_queries
-    if not state.get("confirmed", False):
+    if not state.get("queries_confirmed", False):
         return "confirm_rag_queries"
 
     # If confirmed, proceed to retrieval
+    #q = state.get("search_queries", [])
     return [
         Send("rag_retrieve_worker", {"current_query": q})
         for q in state.get("search_queries", [])
@@ -699,6 +695,7 @@ def reduce_rag_results(state: AgentStateClaim) -> Command[Literal["structure_cla
         update={
             "tool_trace": rag_trace,   # so your structure_claim_matching stays the same
             "awaiting_user": False,
+            "queries_confirmed":False,
         }
     )
 
@@ -728,17 +725,8 @@ def structure_claim_matching(state: AgentStateClaim) -> Command[Literal["match_o
     explanation_lines.append("**Claim matching results**")
     explanation_lines.append("")  # blank line
 
-    # # Show the queries + reasoning
-    # if result.queries:
-    #     explanation_lines.append("Here are the search questions that were used (or would be appropriate) to look for similar claims:")
-    #     for i, q in enumerate(result.queries, start=1):
-    #         explanation_lines.append(f"- **Q{i}:** {q.query}")
-    #         explanation_lines.append(f"  - Why this query: {q.reasoning}")
-    #     explanation_lines.append("")  # blank line
-
     # Show the top claims
     if result.top_claims:
-        explanation_lines.append("From the retrieved information, these existing claims might be relevant to what you're investigating:")
         for i, c in enumerate(result.top_claims, start=1):
             # URL line only if present
             url_part = f"\n  - {c.allowed_url}" if c.allowed_url else ""
@@ -1051,7 +1039,6 @@ def get_source_queries(state: AgentStateClaim) -> Command[Literal["critical_ques
             "messages":  [ai_chat_msg],
             "next_node": "confirm_search_queries",
             "awaiting_user": True,
-            "confirmed":False,
             "research_focus": "select_primary_source",
         }
     )    
@@ -1104,7 +1091,7 @@ def confirm_search_queries(state: AgentStateClaim) -> dict:
 
         # Goto next node and update State
         return {
-            "confirmed": result.confirmed,
+            "queries_confirmed": result.confirmed,
             "search_queries": result.search_queries,
             "messages": [ai_chat_msg],
             "next_node": None,
@@ -1128,12 +1115,12 @@ def route_after_confirm(state: AgentStateClaim):
 
     """ Route based on user confirmation of search queries. """
 
-    # If we need to stop and wait for user input
+    # If we need to stop and wait for user input, after firing a critical question
     if state.get("next_node") == "confirm_search_queries":
         return "__end__"
 
     # If user hasn't confirmed, loop
-    if not state.get("confirmed", False):
+    if not state.get("queries_confirmed", False):
         return "confirm_search_queries"
 
     # Confirmed => fan out to workers
@@ -1247,7 +1234,7 @@ def reduce_sources(state: AgentStateClaim) -> Command[Literal["select_primary_so
     return Command(
         goto=state_next_node,
         update={
-            # overwrite with the finalized/deduped set for downstream nodes
+            "queries_confirmed": False,
             "tavily_context": final_blocks,
             "messages": new_msgs,
             "awaiting_user": True,
@@ -1383,7 +1370,6 @@ def get_search_queries(state: AgentStateClaim) -> Command[Literal["critical_ques
             "messages":  [ai_chat_msg],
             "next_node": "confirm_search_queries",
             "awaiting_user": True,
-            "confirmed":False,
             "research_focus": "iterate_search",
         }
     ) 
@@ -1441,7 +1427,6 @@ def iterate_search(state: AgentStateClaim) -> Command[Literal["get_search_querie
             return Command(
                 goto="get_search_queries",
                 update={
-                    "confirmed": result.confirmed,
                     "messages": [ai_chat_msg],
                     "next_node": None,
                 },
@@ -1450,7 +1435,6 @@ def iterate_search(state: AgentStateClaim) -> Command[Literal["get_search_querie
             return Command(
                 goto="__end__",
                 update={
-                    "confirmed": result.confirmed,
                     "messages": [ai_chat_msg],
                 }
             )

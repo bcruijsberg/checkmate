@@ -19,7 +19,7 @@ class AgentStateClaim(MessagesState):
     quantitative: Optional[str]
     precision: Optional[str]
     based_on: Optional[str]
-    confirmed: bool
+    queries_confirmed: bool
     question: Optional[str]
     alerts: List[str] = Field(default_factory=list)
     summary: Optional[str]

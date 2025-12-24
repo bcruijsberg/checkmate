@@ -105,7 +105,6 @@ claim.add_edge("retrieve_information", "clarify_information")
 claim.add_edge("produce_summary", "critical_question")
 
 # Connecting claim matching nodes
-claim.add_edge("get_rag_queries", "confirm_rag_queries")
 claim.add_conditional_edges("confirm_rag_queries", route_rag_confirm)
 claim.add_edge("rag_retrieve_worker", "reduce_rag_results")
 claim.add_edge("reduce_rag_results", "structure_claim_matching")
@@ -172,7 +171,7 @@ if "claim_state" not in st.session_state:
         "quantitative": None,
         "precision": None,
         "based_on": None,
-        "confirmed": False,
+        "queries_confirmed": False,
         "question": None,
         "alerts": [],
         "summary": None,
