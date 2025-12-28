@@ -34,56 +34,23 @@ from state_scope import (
     GetSearchQueries,
     PrimarySourceSelection, 
 )
-from langgraph.types import Overwrite
-from langchain_core.messages import BaseMessage,HumanMessage,AIMessage, ToolMessage, get_buffer_string
+from langgraph.types import Overwrite, interrupt
+from langchain_core.messages import HumanMessage,AIMessage, get_buffer_string
 from typing import List, Dict, Any, Literal
-from langgraph.graph import StateGraph, START, END
+from langgraph.graph import END
 from langgraph.graph.message import add_messages
 from langgraph.types import Command, Send
 from utils import get_new_user_reply,_domain
-from tooling import llm, llm_tools, llm_tuned, tools_dict
-import json
+from tooling import llm, llm_tuned, tools_dict
 
 # Maximum number of messages to send to the prompt
 MAX_HISTORY_MESSAGES = 6
+
 # ───────────────────────────────────────────────────────────────────────
-# ROUTER NODE
+# CRITICAL QUESTION NODE
 # ───────────────────────────────────────────────────────────────────────
 
-def router(state: AgentStateClaim) -> Command[
-    Literal[
-        "checkable_fact",
-        "checkable_confirmation",
-        "retrieve_information",
-        "clarify_information",
-        "produce_summary",
-        "critical_question",
-        "get_confirmation",
-        "get_rag_queries",
-        "confirm_rag_queries",
-        "rag_retrieve_worker",
-        "reduce_rag_results",
-        "structure_claim_matching",
-        "match_or_continue",
-        "get_source",
-        "get_location_source",
-        "get_source_queries",
-        "confirm_search_queries",
-        "select_primary_source",
-        "iterate_search",
-        ]
-]:
-    """ Route to correct node, after user reply """
-
-    return Command(
-        goto=state.get("next_node") or "checkable_fact"
-        )
-
-# # ───────────────────────────────────────────────────────────────────────
-# # CRITICAL QUESTION NODE
-# # ───────────────────────────────────────────────────────────────────────
-
-def critical_question(state: AgentStateClaim) -> Command[Literal["checkable_confirmation","get_confirmation"]]:
+def critical_question(state: AgentStateClaim):
 
     """ Ask a socratic question to make the user think about the consequences of a fact checking a claim """
 
@@ -110,21 +77,15 @@ def critical_question(state: AgentStateClaim) -> Command[Literal["checkable_conf
 
     ai_chat_msg = AIMessage(content=result.content)
   
-    return Command(
-        goto=state.get("next_node"),
-            update={
-                "critical_question": result.content,
-                "messages_critical": [ai_chat_msg],
-                "next_node": None
-            }        
-    )
-
-
+    return {
+        "critical_question": result.content,
+        "messages_critical": [ai_chat_msg],
+    }
 # ───────────────────────────────────────────────────────────────────────
 # CHECKABLE_FACT NODE
 # ───────────────────────────────────────────────────────────────────────
 
-def checkable_fact(state: AgentStateClaim) -> Command[Literal["critical_question"]]:
+def checkable_fact(state: AgentStateClaim):
 
     """ Check if a claim is potentially checkable. """
 
@@ -161,17 +122,12 @@ def checkable_fact(state: AgentStateClaim) -> Command[Literal["critical_question
     ai_chat_msg = AIMessage(content=explanation_text)
 
     # Goto next node and update State
-    return Command(
-        goto="critical_question",
-        update={
-            "question": result.question,
-            "checkable": is_checkable,
-            "explanation": result.explanation,
-            "messages": [ai_chat_msg],
-            "awaiting_user": True,
-            "next_node": "checkable_confirmation",
-        }
-    )
+    return {
+        "question": result.question,
+        "checkable": is_checkable,
+        "explanation": result.explanation,
+        "messages": [ai_chat_msg],
+    }
 
 # ───────────────────────────────────────────────────────────────────────
 # CHECKABLE_CONFIRMATION NODE
@@ -181,85 +137,63 @@ def checkable_confirmation(state: AgentStateClaim) -> Command[Literal["retrieve_
     
     """ Get confirmation from user on the gathered information. """
 
-    if state.get("awaiting_user"):
+    # Get an answer from the user
+    user_answer = interrupt(state.get("question", "Is the information correct?"))
 
-        ask_msg = AIMessage(content=state.get("question", ""))
-        return Command(
-            goto="__end__", 
-            update={
-                "messages": [ask_msg],
-                "next_node": "checkable_confirmation",
-                "awaiting_user": False,
-            },
-        )
+    # Use structured output
+    structured_llm = llm.with_structured_output(ConfirmationResult, method="json_mode")
+
+    # Create a prompt
+    prompt = confirmation_checkable_prompt.format(
+        claim=state.get("claim", ""),
+        checkable=state.get("checkable", ""),
+        explanation=state.get("explanation", ""),
+        user_answer=user_answer,
+    )
+
+    #invoke the LLM and store the output
+    result = structured_llm.invoke([HumanMessage(content=prompt)])
+    
+    # human-readable assistant message for the chat
+    if result.confirmed:
+        confirm_text = "We'll continue with this claim."
     else:
-        # Retrieve conversation history
-        conversation_history = list(state.get("messages", []))
+        confirm_text = "Okay let's revise the claim or stop here."
 
-        # Get user reply, if the last message was a user message
-        user_answer = get_new_user_reply(conversation_history)
+    ai_chat_msg = AIMessage(content=confirm_text)
 
-        # Use structured output
-        structured_llm = llm.with_structured_output(ConfirmationResult, method="json_mode")
-
-        # Create a prompt
-        prompt = confirmation_checkable_prompt.format(
-            claim=state.get("claim", ""),
-            checkable=state.get("checkable", ""),
-            explanation=state.get("explanation", ""),
-            user_answer=user_answer,
-        )
-
-        #invoke the LLM and store the output
-        result = structured_llm.invoke([HumanMessage(content=prompt)])
-        
-        # human-readable assistant message for the chat
-        if result.confirmed:
-            confirm_text = "We'll continue with this claim."
-        else:
-            confirm_text = "Okay let's revise the claim or stop here."
-
-        ai_chat_msg = AIMessage(content=confirm_text)
-
-        # Goto next node and update State
-        if result.confirmed:
-            if state.get("checkable"):
-                return Command(
-                        goto="retrieve_information", 
-                        update={
-                            "messages": [ai_chat_msg],
-                            "awaiting_user": False,
-                            "additional_context": None,
-                            "next_node": None
-                        }
-                )   
-            else: 
-                # user confirmed but claim is not checkable → end
-                end_msg = AIMessage(content="This claim appears to be uncheckable, so we'll stop the process here.")
-                return Command(
-                        goto=END, 
-                        update={
-                            "messages": [ai_chat_msg] + [end_msg],
-                            "awaiting_user": False,
-                            "next_node": None
-                        }
-                )   
-        else:
+    # Goto next node and update State
+    if result.confirmed:
+        if state.get("checkable"):
             return Command(
-                    goto="checkable_fact", 
+                    goto="retrieve_information", 
                     update={
                         "messages": [ai_chat_msg],
-                        "awaiting_user": False,
-                        "additional_context": user_answer,
-                        "next_node": None
                     }
-            )
+            )   
+        else: 
+            # user confirmed but claim is not checkable → end
+            end_msg = AIMessage(content="This claim appears to be uncheckable, so we'll stop the process here.")
+            return Command(
+                    goto="__end__", 
+                    update={
+                        "messages": [ai_chat_msg, end_msg]
+                    }
+            )   
+    else:
+        return Command(
+                goto="checkable_fact", 
+                update={
+                    "messages": [ai_chat_msg],
+                    "additional_context": user_answer,
+                }
+        )
 
 # ───────────────────────────────────────────────────────────────────────
 # RETRIEVE_INFORMATION NODE
 # ───────────────────────────────────────────────────────────────────────
 
-def retrieve_information(state: AgentStateClaim) -> Command[Literal["clarify_information"]]:
+def retrieve_information(state: AgentStateClaim):
 
     """ Gather more information about a potentially checkable claim. """
 
@@ -298,20 +232,15 @@ def retrieve_information(state: AgentStateClaim) -> Command[Literal["clarify_inf
     ai_chat_msg = AIMessage(content=details_text)
 
     # Goto next node and update State
-    return Command(
-        goto="clarify_information", 
-        update={
-            "subject": result.subject,
-            "quantitative": result.quantitative,
-            "precision": result.precision,
-            "based_on": result.based_on,
-            "question": result.question,
-            "alerts": result.alerts or [],
-            "messages": [ai_chat_msg],
-            "awaiting_user": True,
-            "next_node": None,
-        }
-    )   
+    return {
+        "subject": result.subject,
+        "quantitative": result.quantitative,
+        "precision": result.precision,
+        "based_on": result.based_on,
+        "question": result.question,
+        "alerts": result.alerts or [],
+        "messages": [ai_chat_msg],
+    }  
 
 # ───────────────────────────────────────────────────────────────────────
 # CLARIFY_INFORMATION NODE
@@ -321,84 +250,71 @@ def clarify_information(state: AgentStateClaim) -> Command[Literal["produce_summ
 
     """ Get confirmation from user on the gathered information. """
 
-    if state.get("awaiting_user"):
+    # Get an answer from the user
+    user_answer = interrupt(state.get("question", "Is the information correct?"))
 
-        ask_msg = AIMessage(content=state.get("question", ""))
-        return Command(
-            goto="__end__", 
-            update={
-                "messages": [ask_msg],
-                "next_node": "clarify_information",
-                "awaiting_user": False,
-            },
-        )
+    #retrieve alerts and format to string for the prompt
+    alerts=state.get("alerts", [])
+    alerts_str= "\n".join(f"- {a}" for a in alerts)
+
+    # retrieve conversation history
+    conversation_history = list(state.get("messages", []))
+
+    # Add the last message into a string for the prompt
+    recent_messages = conversation_history[-MAX_HISTORY_MESSAGES:]  # tune this number
+    messages_str = get_buffer_string(recent_messages)
+
+    # Use structured output
+    structured_llm = llm.with_structured_output(ConfirmationResult, method="json_mode")
+
+    # Create a prompt
+    prompt  =  confirmation_clarification_prompt.format(
+        subject=state.get("subject", ""),
+        quantitative=state.get("quantitative", ""),
+        precision=state.get("precision", ""),
+        based_on=state.get("based_on", ""),
+        claim=state.get("claim", ""),
+        question=state.get("question", ""),
+        alerts=alerts_str,
+        messages=messages_str,
+        user_answer=user_answer,
+    )
+
+    #invoke the LLM and store the output
+    result = structured_llm.invoke([HumanMessage(content=prompt)])
+
+    # human-readable assistant message for the chat
+    if result.confirmed:
+        confirm_text = "Thanks, I’ll use this information to draft the summary."
     else:
+        confirm_text = "Let’s collect a bit more information."
 
-        #retrieve alerts and format to string for the prompt
-        alerts=state.get("alerts", [])
-        alerts_str= "\n".join(f"- {a}" for a in alerts)
+    ai_chat_msg = AIMessage(content=confirm_text)
 
-        # retrieve conversation history
-        conversation_history = list(state.get("messages", []))
-        user_answer = get_new_user_reply(conversation_history)
-
-        # Add the last message into a string for the prompt
-        recent_messages = conversation_history[-MAX_HISTORY_MESSAGES:]  # tune this number
-        messages_str = get_buffer_string(recent_messages)
-
-        # Use structured output
-        structured_llm = llm.with_structured_output(ConfirmationResult, method="json_mode")
-
-        # Create a prompt
-        prompt  =  confirmation_clarification_prompt.format(
-            subject=state.get("subject", ""),
-            quantitative=state.get("quantitative", ""),
-            precision=state.get("precision", ""),
-            based_on=state.get("based_on", ""),
-            claim=state.get("claim", ""),
-            question=state.get("question", ""),
-            alerts=alerts_str,
-            messages=messages_str,
-            user_answer=user_answer,
+    # Goto next node and update State
+    if result.confirmed:
+        return Command(
+                goto="produce_summary", 
+                update={
+                    "messages": [ai_chat_msg],
+                    "additional_context": None,
+                    "confirmed": False,
+                }
+        )       
+    else:
+        return Command(
+                goto="retrieve_information", 
+                update={
+                    "messages": [ai_chat_msg],
+                    "additional_context": user_answer,
+                }
         )
-
-        #invoke the LLM and store the output
-        result = structured_llm.invoke([HumanMessage(content=prompt)])
-
-        # human-readable assistant message for the chat
-        if result.confirmed:
-            confirm_text = "Thanks, I’ll use this information to draft the summary."
-        else:
-            confirm_text = "Let’s collect a bit more information."
-
-        ai_chat_msg = AIMessage(content=confirm_text)
-
-        # Goto next node and update State
-        if result.confirmed:
-            return Command(
-                    goto="produce_summary", 
-                    update={
-                        "messages": [ai_chat_msg],
-                        "additional_context": None,
-                        "next_node": None,
-                        "confirmed": False,
-                    }
-            )       
-        else:
-            return Command(
-                    goto="retrieve_information", 
-                    update={
-                        "messages": [ai_chat_msg],
-                        "additional_context": user_answer,
-                        "next_node": None,
-                    }
-            )
 
 # ───────────────────────────────────────────────────────────────────────
 # PRODUCE SUMMARY NODE
 # ───────────────────────────────────────────────────────────────────────
 
-def produce_summary(state: AgentStateClaim) -> Command[Literal["critical_question"]]:
+def produce_summary(state: AgentStateClaim):
 
     """ Get a summary on the gathered information. """
 
@@ -438,22 +354,17 @@ def produce_summary(state: AgentStateClaim) -> Command[Literal["critical_questio
     ai_chat_msg = AIMessage(content=summary_text)
 
     # Goto next node and update State
-    return Command( 
-            goto="critical_question",
-            update={
-                "summary": result.summary,
-                "question": result.question,
-                "messages": [ai_chat_msg],
-                "subject": result.subject,
-                "quantitative": result.quantitative,
-                "precision": result.precision,
-                "based_on": result.based_on,
-                "alerts": result.alerts or [],
-                "claim_source": result.claim_source,
-                "awaiting_user": True,
-                "next_node": "get_confirmation",
-            }
-    )       
+    return {
+        "summary": result.summary,
+        "question": result.question,
+        "messages": [ai_chat_msg],
+        "subject": result.subject,
+        "quantitative": result.quantitative,
+        "precision": result.precision,
+        "based_on": result.based_on,
+        "alerts": result.alerts or [],
+        "claim_source": result.claim_source,
+     }      
 
 # ───────────────────────────────────────────────────────────────────────
 # GET_CONFIRMATION NODE
@@ -463,77 +374,64 @@ def get_confirmation(state: AgentStateClaim) -> Command[Literal["produce_summary
 
     """ Get confirmation from user on the gathered information."""
 
-    if state.get("awaiting_user"):
+    # Get an answer from the user
+    user_answer = interrupt(state.get("question", "Is the information correct?"))
 
-        ask_msg = AIMessage(content=state.get("question", []))
-        return Command(
-            goto="__end__", 
-            update={
-                "messages": [ask_msg],
-                "next_node": "get_confirmation",
-                "awaiting_user": False,
-            },
-        )
+    # Use structured output
+    structured_llm = llm.with_structured_output(ConfirmationFinalResult, method="json_mode")
+
+    # Create a prompt
+    prompt  =  confirmation_check_prompt.format(
+        summary=state.get("summary", ""),
+        user_answer=user_answer,
+    )
+
+    #invoke the LLM and store the output
+    result = structured_llm.invoke([HumanMessage(content=prompt)])
+
+    # human-readable assistant message for the chat
+    if result.confirmed:
+        confirm_text = "Let's check if this claim has already been researched"
     else:
-        # retrieve conversation history
-        conversation_history = list(state.get("messages", []))
-        user_answer = get_new_user_reply(conversation_history)
+        confirm_text = "Let's revisit the summary and adjust it if needed."
 
-        # Use structured output
-        structured_llm = llm.with_structured_output(ConfirmationFinalResult, method="json_mode")
+    ai_chat_msg = AIMessage(content=confirm_text)
 
-        # Create a prompt
-        prompt  =  confirmation_check_prompt.format(
-            summary=state.get("summary", ""),
-            user_answer=user_answer,
+    # Goto next node and update State
+    if result.confirmed:
+        return Command(
+                goto="get_rag_queries", 
+                update={
+                    "subject": result.subject,
+                    "quantitative": result.quantitative,
+                    "precision": result.precision,
+                    "based_on": result.based_on,
+                    "question": result.question,
+                    "alerts": result.alerts or [],
+                    "claim_source": result.claim_source,
+                    "messages": [ai_chat_msg],
+                }
+        )       
+    else:
+        return Command(
+                goto="produce_summary", 
+                update={
+                    "messages": [ai_chat_msg],
+                    "subject": result.subject,
+                    "quantitative": result.quantitative,
+                    "precision": result.precision,
+                    "based_on": result.based_on,
+                    "question": result.question,
+                    "alerts": result.alerts or [],
+                    "claim_source": result.claim_source,
+                }
         )
 
-        #invoke the LLM and store the output
-        result = structured_llm.invoke([HumanMessage(content=prompt)])
-
-        # human-readable assistant message for the chat
-        if result.confirmed:
-            confirm_text = "Let's check if this claim has already been researched"
-        else:
-            confirm_text = "Let's revisit the summary and adjust it if needed."
-
-        ai_chat_msg = AIMessage(content=confirm_text)
-
-        # Goto next node and update State
-        if result.confirmed:
-            return Command(
-                    goto="get_rag_queries", 
-                    update={
-                        "subject": result.subject,
-                        "quantitative": result.quantitative,
-                        "precision": result.precision,
-                        "based_on": result.based_on,
-                        "question": result.question,
-                        "alerts": result.alerts or [],
-                        "claim_source": result.claim_source,
-                        "messages": [ai_chat_msg],
-                    }
-            )       
-        else:
-            return Command(
-                    goto="produce_summary", 
-                    update={
-                        "messages": [ai_chat_msg],
-                        "subject": result.subject,
-                        "quantitative": result.quantitative,
-                        "precision": result.precision,
-                        "based_on": result.based_on,
-                        "question": result.question,
-                        "alerts": result.alerts or [],
-                        "claim_source": result.claim_source,
-                        "next_node": None,
-                    }
-            )
   
 # ───────────────────────────────────────────────────────────────────────
 # GENERATE QUERIES FOR CLAIM MATCHING NODE
 # ───────────────────────────────────────────────────────────────────────
-def get_rag_queries(state: AgentStateClaim) -> Command[Literal["confirm_rag_queries"]]:
+def get_rag_queries(state: AgentStateClaim):
 
     """ Generate queries to locate the primary source of the claim. """
 
@@ -560,22 +458,18 @@ def get_rag_queries(state: AgentStateClaim) -> Command[Literal["confirm_rag_quer
     # create a human-readable assistant message for the chat
     queries_text = "\n".join(f"- {q}" for q in result.search_queries if q)
     chat_text = (
-        "I will perform a search with these queries, would you like to add or change something?\n"
+        "I will perform a search with these queries\n"
         f"{queries_text}"
     )
 
     ai_chat_msg = AIMessage(content=chat_text)
 
     # Goto next node and update State  
-    return Command(
-        goto="confirm_rag_queries", 
-        update={
-            "search_queries": result.search_queries,
-            "messages":  [ai_chat_msg],
-            "next_node": None,
-            "awaiting_user": True,
-        }
-    )    
+    return {
+        "search_queries": result.search_queries,
+        "messages":  [ai_chat_msg],
+        "question": "would you like to add or change something?"
+    }  
 
 # ───────────────────────────────────────────────────────────────────────
 # CONFIRM CLAIM MATCHING QUERIES NODE
@@ -583,76 +477,66 @@ def get_rag_queries(state: AgentStateClaim) -> Command[Literal["confirm_rag_quer
 def confirm_rag_queries(state: AgentStateClaim) -> dict:
     
     """Update state based on user confirmation. Routing is handled by a router."""
+    
+    # Get an answer from the user
+    user_answer = interrupt(state.get("question", "Is the information correct?"))
 
-    if state.get("awaiting_user"):
-        # pause for user
-        return {
-            "next_node": "confirm_rag_queries",
-            "awaiting_user": False,
-        }
+    # retrieve search_queries and format to string for the prompt
+    search_queries = state.get("search_queries", [])
+    search_queries_str= "\n".join(f"- {a}" for a in search_queries)
+
+    # Use structured output
+    structured_llm = llm.with_structured_output(GetSearchQueries, method="json_mode")
+
+    # Create a prompt
+    prompt  =  confirm_queries_prompt.format(
+        search_queries=search_queries_str,
+        user_answer=user_answer,
+    )
+
+    #invoke the LLM and store the output
+    result = structured_llm.invoke([HumanMessage(content=prompt)])
+
+    # human-readable assistant message for the chat
+    queries_text = "\n".join(f"- {q}" for q in result.search_queries if q)
+
+    # Create the base update
+    update = {
+        "queries_confirmed": result.confirmed,
+        "search_queries": result.search_queries,
+    }
+
+    # Add messages only if confirmed, els reask the question
+    if result.confirmed:
+        confirm_text = "From the retrieved information, these existing claims might be relevant to what you're investigating.\n"
+        ai_chat_msg = AIMessage(content=confirm_text)
+        update["messages"] = [ai_chat_msg]
     else:
-        # retrieve conversation history
-        conversation_history = list(state.get("messages", []))
-        user_answer = get_new_user_reply(conversation_history)
-
-        # retrieve search_queries and format to string for the prompt
-        search_queries = state.get("search_queries", [])
-        search_queries_str= "\n".join(f"- {a}" for a in search_queries)
-
-        # Use structured output
-        structured_llm = llm.with_structured_output(GetSearchQueries, method="json_mode")
-
-        # Create a prompt
-        prompt  =  confirm_queries_prompt.format(
-            search_queries=search_queries_str,
-            user_answer=user_answer,
+        update["question"] = (
+            "Is there anything else you would like to change about the search queries?\n"
+            f"{queries_text}"
         )
 
-        #invoke the LLM and store the output
-        result = structured_llm.invoke([HumanMessage(content=prompt)])
-
-         # human-readable assistant message for the chat
-        queries_text = "\n".join(f"- {q}" for q in result.search_queries if q)
-        if result.confirmed:
-            confirm_text = "From the retrieved information, these existing claims might be relevant to what you're investigating.\n"
-        else:
-            confirm_text = (
-                "Is there anything else you would like to change about the search queries?\n"
-                f"{queries_text}"
-            )
-
-        ai_chat_msg = AIMessage(content=confirm_text)
-
-        # Goto next node and update State
-        return {
-            "queries_confirmed": result.confirmed,
-            "search_queries": result.search_queries,
-            "messages": [ai_chat_msg],
-            "next_node": None,
-            "awaiting_user": (not result.confirmed),
-        }
+    return update
 # ───────────────────────────────────────────────────────────────────────
 # ROUTER CLAIM MATCHING NODE
 # ───────────────────────────────────────────────────────────────────────
 
 def route_rag_confirm(state: AgentStateClaim):
-
     """ Route based on user confirmation of RAG queries. """
 
-    # If we need to stop and wait for user input, after firing a critical question
-    if state.get("next_node") == "confirm_rag_queries":
-        return "__end__"
-
-    # If not confirmed, go back to get_rag_queries
+    # If not confirmed or search queries are empty, go back to "get_rag_queries"
     if not state.get("queries_confirmed", False):
+        return "confirm_rag_queries" 
+    
+    search_queries = state.get("search_queries", [])
+    if not search_queries:
         return "confirm_rag_queries"
 
     # If confirmed, proceed to retrieval
-    #q = state.get("search_queries", [])
     return [
         Send("rag_retrieve_worker", {"current_query": q})
-        for q in state.get("search_queries", [])
-        if q
+        for q in search_queries if q
     ]
 
 # ───────────────────────────────────────────────────────────────────────
@@ -682,7 +566,7 @@ async def rag_retrieve_worker(state: AgentStateClaim) -> Dict[str, Any]:
 # REDUCER CLAIM MATCHING NODE
 # ───────────────────────────────────────────────────────────────────────
 
-def reduce_rag_results(state: AgentStateClaim) -> Command[Literal["structure_claim_matching"]]:
+def reduce_rag_results(state: AgentStateClaim):
 
     """ Reduce the RAG retrieval results into a single trace. """
 
@@ -690,14 +574,11 @@ def reduce_rag_results(state: AgentStateClaim) -> Command[Literal["structure_cla
     rag_trace = state.get("rag_trace", [])
 
     # Combine all RAG traces into one
-    return Command(
-        goto="structure_claim_matching",
-        update={
-            "tool_trace": rag_trace,   # so your structure_claim_matching stays the same
-            "awaiting_user": False,
-            "queries_confirmed":False,
-        }
-    )
+    return {
+        "tool_trace": rag_trace,   # so your structure_claim_matching stays the same
+        "awaiting_user": False,
+        "queries_confirmed":False,
+    }
 
 # ───────────────────────────────────────────────────────────────────────
 # STRUCTURE CLAIM MATCHING NODE
@@ -748,8 +629,6 @@ def structure_claim_matching(state: AgentStateClaim) -> Command[Literal["match_o
             update={
                 "messages": [ai_chat_msg],
                 "claim_matching_result": result, 
-                "awaiting_user": True,
-                "next_node": "match_or_continue",
             },
         )
     else:
@@ -757,8 +636,6 @@ def structure_claim_matching(state: AgentStateClaim) -> Command[Literal["match_o
             goto="get_source", 
             update={
                 "messages": [ai_chat_msg],  
-                "awaiting_user": True,
-                "next_node": "get_source",
             }
         )
 
@@ -770,149 +647,126 @@ def match_or_continue(state: AgentStateClaim) -> Command[Literal["get_source", "
 
     """ Decide whether to continue researching or end the process if a matching claim was found."""
 
-    if state.get("awaiting_user"):
-        ask_msg = AIMessage(content="Do any of these match your claim? Or do you want to continue researching as suggested?")
-        return Command(
-            goto="__end__", 
-            update={
-                "messages": [ask_msg],
-                "next_node": "match_or_continue",
-                "awaiting_user": False,
-            },
+    # Get an answer from the user
+    user_answer = interrupt("Do any of these match your claim? Or do you want to continue researching as suggested?")
+
+    # retrieve conversation history
+    conversation_history = list(state.get("messages", []))
+
+    # Add the last message into a string for the prompt
+    recent_messages = conversation_history[-MAX_HISTORY_MESSAGES:]  # tune this number
+    messages_str = get_buffer_string(recent_messages)
+
+    # Use structured output
+    structured_llm = llm.with_structured_output(ConfirmationMatch, method="json_mode")
+
+    # Create a prompt
+    prompt =  match_check_prompt.format(
+        messages=messages_str,
+        user_answer=user_answer,
+    )
+
+    #invoke the LLM and store the output
+    result = structured_llm.invoke([HumanMessage(content=prompt)])
+
+    # # human-readable assistant message for the chat
+    if result.match:
+        ai_chat_msg = AIMessage(
+            content=(
+                "This claim appears to match an already researched claim. "
+                "We can stop the process here."
+            )
         )
     else:
-        # retrieve conversation history
-        conversation_history = list(state.get("messages", []))
-        user_answer = get_new_user_reply(conversation_history)
-
-        # Add the last message into a string for the prompt
-        recent_messages = conversation_history[-MAX_HISTORY_MESSAGES:]  # tune this number
-        messages_str = get_buffer_string(recent_messages)
-
-        # Use structured output
-        structured_llm = llm.with_structured_output(ConfirmationMatch, method="json_mode")
-
-        # Create a prompt
-        prompt =  match_check_prompt.format(
-            messages=messages_str,
-            user_answer=user_answer,
+        ai_chat_msg = AIMessage(
+            content=(
+                "No exact match found. Let's continue researching."
+            )
         )
-
-        #invoke the LLM and store the output
-        result = structured_llm.invoke([HumanMessage(content=prompt)])
-
-        # # human-readable assistant message for the chat
-        if result.match:
-            ai_chat_msg = AIMessage(
-                content=(
-                    "This claim appears to match an already researched claim. "
-                    "We can stop the process here."
-                )
-            )
-        else:
-            ai_chat_msg = AIMessage(
-                content=(
-                    "No exact match found. Let's continue researching."
-                )
-            )
-        
-        # Goto next node and update State
-        if result.match:
-            return Command(
-                    goto="__end__", 
-                    update={
-                        "match": result.match,
-                        "messages": [ai_chat_msg], 
-                        "awaiting_user": False,
-                        "next_node": None
-                    }
-            )       
-        else:
-            return Command(
-                    goto="get_source", 
-                    update={
-                        "messages": [ai_chat_msg],  
-                        "awaiting_user": True,
-                        "next_node": "get_source",
-                    }
-            )
+    
+    # Goto next node and update State
+    if result.match:
+        return Command(
+                goto="__end__", 
+                update={
+                    "match": result.match,
+                    "messages": [ai_chat_msg], 
+                }
+        )       
+    else:
+        return Command(
+                goto="get_source", 
+                update={
+                    "messages": [ai_chat_msg],  
+                }
+        )
 
 # ───────────────────────────────────────────────────────────────────────
 # RETRIEVE SOURCE, AND CHECK IF PRIMARY SOURCE KNOWN
 # ───────────────────────────────────────────────────────────────────────
 
-def get_source(state: AgentStateClaim) -> Command[Literal["get_location_source"]]:
+def get_source(state: AgentStateClaim):
 
     """ Ask the user for the  source of the claim if no match was found."""
     
     # Retrieve the source of the claim
     claim_source=state.get("claim_source")
-    
-    if state.get("awaiting_user"):
 
-        if claim_source:
-            ask_msg = AIMessage(content="Was {claim_source} the primary source (the first time this claim was made)?")
-        elif claim_source is None or claim_source == "":
-            ask_msg = AIMessage(content="Do you know the source and is this the primary source (when it was first made)?")
+    # if claim_source:
+    #         ask_msg = AIMessage(content="Was {claim_source} the primary source (the first time this claim was made)?")
+    # elif claim_source is None or claim_source == "":
+    #         ask_msg = AIMessage(content="Do you know the source and is this the primary source (when it was first made)?")
 
-        return Command(
-            goto="__end__", 
-            update={
-                "messages": [ask_msg],
-                "next_node": "get_source",
-                "awaiting_user": False,
-            },
+    # Prepare the question to ask the user
+    if claim_source:
+            ask_msg = f"Was {claim_source} the primary source (the first time this claim was made)?"
+    elif claim_source is None or claim_source == "":
+            ask_msg = "Do you know the source and is this the primary source (when it was first made)?"
+
+    # Get an answer from the user
+    user_answer = interrupt(ask_msg)
+
+    # retrieve conversation history
+    conversation_history = list(state.get("messages", []))
+
+    # Add the last message into a string for the prompt
+    recent_messages = conversation_history[-MAX_HISTORY_MESSAGES:]  # tune this number
+    messages_str = get_buffer_string(recent_messages)
+
+    # Use structured output
+    structured_llm = llm.with_structured_output(GetSource, method="json_mode")
+
+    # Create a prompt
+    prompt = identify_source_prompt.format(
+        messages=messages_str,
+        user_answer=user_answer,
+        claim_source=claim_source,
+    )
+
+    #invoke the LLM and store the output
+    result = structured_llm.invoke([HumanMessage(content=prompt)])
+
+    if result.primary_source:
+        question_text = (
+            f"Great, we have the primary source as **{result.primary_source}**.\n\n"
+            f"Can you locate or provide a URL to the specific social media post, "
+            f"speech, or article where {result.primary_source} first made this claim? "
         )
     else:
-
-        # retrieve conversation history
-        conversation_history = list(state.get("messages", []))
-        user_answer = get_new_user_reply(conversation_history)
-
-        # Add the last message into a string for the prompt
-        recent_messages = conversation_history[-MAX_HISTORY_MESSAGES:]  # tune this number
-        messages_str = get_buffer_string(recent_messages)
-
-        # Use structured output
-        structured_llm = llm.with_structured_output(GetSource, method="json_mode")
-
-        # Create a prompt
-        prompt = identify_source_prompt.format(
-            messages=messages_str,
-            user_answer=user_answer,
-            claim_source=claim_source,
+        question_text = (
+            "I couldn't identify a primary source from that. "
+            "Can you locate or provide a URL to the specific social media post, "
+            "speech, or article where this claim was found? "
         )
 
-        #invoke the LLM and store the output
-        result = structured_llm.invoke([HumanMessage(content=prompt)])
+    ai_chat_msg = AIMessage(content=question_text)
 
-        if result.primary_source:
-            question_text = (
-                f"Great, we have the primary source as **{result.primary_source}**.\n\n"
-                f"Can you locate or provide a URL to the specific social media post, "
-                f"speech, or article where {result.primary_source} first made this claim? "
-                f"Or can you describe the source if you don't have a URL?"
-            )
-        else:
-            question_text = (
-                "I couldn't identify a primary source from that. "
-                "Can you locate or provide a URL to the specific social media post, "
-                "speech, or article where this claim was found? "
-                "Or can you describe the source if you don't have a URL?"
-            )
-        ai_chat_msg = AIMessage(content=question_text)
-
-         # Goto next node and update State
-        return Command(
-                goto="get_location_source", 
-                update={
-                    "claim_source": result.claim_source,
-                    "primary_source": result.primary_source,
-                    "messages": [ai_chat_msg],
-                    "awaiting_user": True,
-                    "next_node": None,
-                }
-        ) 
+        # Goto next node and update State
+    return {
+        "claim_source": result.claim_source,
+        "primary_source": result.primary_source,
+        "messages": [ai_chat_msg],
+    }
 
 # ───────────────────────────────────────────────────────────────────────
 # RETRIEVE LOCATION OF SOURCE NODE, OR A DESCRIPTION
@@ -922,80 +776,67 @@ def get_location_source(state: AgentStateClaim) -> Command[Literal["get_search_q
 
     """ Ask the user where the claim was found. """
 
-    if state.get("awaiting_user"):
+    # Get an answer from the user
+    user_answer = interrupt("Or can you describe the source if you don't have a URL?")
+    
+    # retrieve conversation history
+    conversation_history = list(state.get("messages", []))
 
-        return Command(
-            goto="__end__", 
-            update={
-                "next_node": "get_location_source",
-                "awaiting_user": False,
-            },
+    # Add the last message into a string for the prompt
+    recent_messages = conversation_history[-MAX_HISTORY_MESSAGES:]  # tune this number
+    messages_str = get_buffer_string(recent_messages)
+
+    # Use structured output
+    structured_llm = llm.with_structured_output(GetSourceLocation, method="json_mode")
+
+    # Create a prompt
+    prompt  = source_location_prompt.format(
+        messages=messages_str,
+        user_answer=user_answer,
+    )
+
+    #invoke the LLM and store the output
+    result = structured_llm.invoke([HumanMessage(content=prompt)])
+
+    #check if the primary source is known
+    primary_source = state.get("primary_source")
+
+    # human-readable assistant message for the chat
+    if primary_source:
+        chat_text = (
+            f"We will now continue researching the claim."
         )
     else:
-
-        # retrieve conversation history
-        conversation_history = list(state.get("messages", []))
-        user_answer = get_new_user_reply(conversation_history)
-
-        # Add the last message into a string for the prompt
-        recent_messages = conversation_history[-MAX_HISTORY_MESSAGES:]  # tune this number
-        messages_str = get_buffer_string(recent_messages)
-
-        # Use structured output
-        structured_llm = llm.with_structured_output(GetSourceLocation, method="json_mode")
-
-        # Create a prompt
-        prompt  = source_location_prompt.format(
-            messages=messages_str,
-            user_answer=user_answer,
+        chat_text = (
+            f"We will now first try to locate the primary source (who made the claim first)."
         )
 
-        #invoke the LLM and store the output
-        result = structured_llm.invoke([HumanMessage(content=prompt)])
+    ai_chat_msg = AIMessage(content=chat_text)
 
-        #check if the primary source is known
-        primary_source = state.get("primary_source")
-
-        # human-readable assistant message for the chat
-        if primary_source:
-            chat_text = (
-                f"We will now continue researching the claim."
-            )
-        else:
-            chat_text = (
-                f"We will now first try to locate the primary source (who made the claim first)."
-            )
-
-        ai_chat_msg = AIMessage(content=chat_text)
-
-        # Goto next node and update State
-        if primary_source:
-            return Command(
-                goto="get_search_queries", 
-                update={
-                    "claim_url": result.claim_url,
-                    "source_description": result.source_description,
-                    "messages":  [ai_chat_msg],
-                    "next_node": None,
-                    "awaiting_user": False,
-                }
-            )    
-        else:
-            return Command(
-                goto="get_source_queries",
-                update={
-                    "claim_url": result.claim_url,
-                    "source_description": result.source_description,
-                    "messages":  [ai_chat_msg],
-                    "next_node": None,
-                    "awaiting_user": False,
-                }
-            )  
+    # Goto next node and update State
+    if primary_source:
+        return Command(
+            goto="get_search_queries", 
+            update={
+                "claim_url": result.claim_url,
+                "source_description": result.source_description,
+                "messages":  [ai_chat_msg],
+            }
+        )    
+    else:
+        return Command(
+            goto="get_source_queries",
+            update={
+                "claim_url": result.claim_url,
+                "source_description": result.source_description,
+                "messages":  [ai_chat_msg],
+            }
+        )  
 
 # ───────────────────────────────────────────────────────────────────────
 # GENERATE QUERIES TO LOCATE PRIMARY SOURCE NODE
 # ───────────────────────────────────────────────────────────────────────
-def get_source_queries(state: AgentStateClaim) -> Command[Literal["critical_question"]]:
+def get_source_queries(state: AgentStateClaim):
 
     """ Generate queries to locate the primary source of the claim. """
 
@@ -1025,23 +866,19 @@ def get_source_queries(state: AgentStateClaim) -> Command[Literal["critical_ques
     # create a human-readable assistant message for the chat
     queries_text = "\n".join(f"- {q}" for q in result.search_queries if q)
     chat_text = (
-        "I will perform a search with these queries, would you like to add or change something?\n"
+        "I will perform a search with these queries:\n"
         f"{queries_text}"
     )
 
     ai_chat_msg = AIMessage(content=chat_text)
 
     # Goto next node and update State  
-    return Command(
-        goto="critical_question", 
-        update={
-            "search_queries": result.search_queries,
-            "messages":  [ai_chat_msg],
-            "next_node": "confirm_search_queries",
-            "awaiting_user": True,
-            "research_focus": "select_primary_source",
-        }
-    )    
+    return {
+        "search_queries": result.search_queries,
+        "messages":  [ai_chat_msg],
+        "research_focus": "select_primary_source",
+        "question": "would you like to add or change something?"
+    }
 
 # ───────────────────────────────────────────────────────────────────────
 # CONFIRM SEARCH QUERIES NODE
@@ -1050,54 +887,46 @@ def confirm_search_queries(state: AgentStateClaim) -> dict:
     
     """Update state based on user confirmation. Routing is handled by a router."""
 
-    if state.get("awaiting_user"):
-        # pause for user
-        return {
-            "next_node": "confirm_search_queries",
-            "awaiting_user": False,
-        }
+    # Get an answer from the user
+    user_answer = interrupt(state.get("question", "Is the information correct?"))
+    
+    # retrieve search_queries and format to string for the prompt
+    search_queries = state.get("search_queries", [])
+    search_queries_str= "\n".join(f"- {a}" for a in search_queries)
+
+    # Use structured output
+    structured_llm = llm.with_structured_output(GetSearchQueries, method="json_mode")
+
+    # Create a prompt
+    prompt  =  confirm_queries_prompt.format(
+        search_queries=search_queries_str,
+        user_answer=user_answer,
+    )
+
+    #invoke the LLM and store the output
+    result = structured_llm.invoke([HumanMessage(content=prompt)])
+
+    # human-readable assistant message for the chat
+    queries_text = "\n".join(f"- {q}" for q in result.search_queries if q)
+
+    # Create the base update
+    update = {
+        "queries_confirmed": result.confirmed,
+        "search_queries": result.search_queries,
+    }
+
+    # Add messages only if confirmed, els reask the question
+    if result.confirmed:
+        confirm_text = "We will continue searching.\n"
+        ai_chat_msg = AIMessage(content=confirm_text)
+        update["messages"] = [ai_chat_msg]
     else:
-        # retrieve conversation history
-        conversation_history = list(state.get("messages", []))
-        user_answer = get_new_user_reply(conversation_history)
-
-        # retrieve search_queries and format to string for the prompt
-        search_queries = state.get("search_queries", [])
-        search_queries_str= "\n".join(f"- {a}" for a in search_queries)
-
-        # Use structured output
-        structured_llm = llm.with_structured_output(GetSearchQueries, method="json_mode")
-
-        # Create a prompt
-        prompt  =  confirm_queries_prompt.format(
-            search_queries=search_queries_str,
-            user_answer=user_answer,
+        update["question"] = (
+            "Is there anything else you would like to change about the search queries?\n"
+            f"{queries_text}"
         )
 
-        #invoke the LLM and store the output
-        result = structured_llm.invoke([HumanMessage(content=prompt)])
-
-         # human-readable assistant message for the chat
-        queries_text = "\n".join(f"- {q}" for q in result.search_queries if q)
-        if result.confirmed:
-            confirm_text = "We will continue searching."
-        else:
-            confirm_text = (
-                "Is there anything else you would like to change about the search queries?\n"
-                f"{queries_text}"
-            )
-
-        ai_chat_msg = AIMessage(content=confirm_text)
-
-        # Goto next node and update State
-        return {
-            "queries_confirmed": result.confirmed,
-            "search_queries": result.search_queries,
-            "messages": [ai_chat_msg],
-            "next_node": None,
-            "awaiting_user": (not result.confirmed),
-        }
-
+    return update
 # ───────────────────────────────────────────────────────────────────────
 # RESET THE SEARCH STATE NODE
 # ───────────────────────────────────────────────────────────────────────
@@ -1115,19 +944,18 @@ def route_after_confirm(state: AgentStateClaim):
 
     """ Route based on user confirmation of search queries. """
 
-    # If we need to stop and wait for user input, after firing a critical question
-    if state.get("next_node") == "confirm_search_queries":
-        return "__end__"
-
-    # If user hasn't confirmed, loop
+    # If not confirmed or search queries are empty, go back to "confirm_search_queries"
     if not state.get("queries_confirmed", False):
         return "confirm_search_queries"
+    
+    search_queries = state.get("search_queries", [])
+    if not search_queries:
+        return "confirm_search_queries"
 
-    # Confirmed => fan out to workers
+    # If confirmed, proceed to retrieval
     return [
         Send("find_sources_worker", {"current_query": q})
-        for q in state.get("search_queries", [])
-        if q
+        for q in search_queries if q
     ]
 
 # ───────────────────────────────────────────────────────────────────────
@@ -1237,8 +1065,6 @@ def reduce_sources(state: AgentStateClaim) -> Command[Literal["select_primary_so
             "queries_confirmed": False,
             "tavily_context": final_blocks,
             "messages": new_msgs,
-            "awaiting_user": True,
-            "next_node": None,
             "search_queries":[],
         },
     )
@@ -1246,82 +1072,69 @@ def reduce_sources(state: AgentStateClaim) -> Command[Literal["select_primary_so
 # SELECT PRIMARY SOURCE
 # ───────────────────────────────────────────────────────────────────────
 
-def select_primary_source(state: AgentStateClaim) -> Command[Literal["get_search_queries"]]:
+def select_primary_source(state: AgentStateClaim):
 
     """ pick the best / most likely primary source. """
 
-    if state.get("awaiting_user"):
-        ask_msg = AIMessage(content="Does any of these sources correspond to the primary source of the claim?")
-        return Command(
-            goto="__end__", 
-            update={
-                "messages": [ask_msg],
-                "next_node": "select_primary_source",
-                "awaiting_user": False,
-            },
+    # Get an answer from the user
+    user_answer = interrupt("Does any of these sources correspond to the primary source of the claim?")
+
+    # Get the context and conversation history
+    conversation_history = list(state.get("messages", []))
+
+    # Use structured output 
+    structured_llm = llm.with_structured_output(PrimarySourceSelection, method="json_mode")
+
+    # Add the last message into a string for the prompt
+    recent_messages = conversation_history[-MAX_HISTORY_MESSAGES:]  # tune this number
+    messages_str = get_buffer_string(recent_messages)
+
+    # Create a prompt
+    prompt = select_primary_source_prompt.format(
+        claim_source=state.get("claim_source", ""),
+        claim_url=state.get("claim_url", ""),
+        user_answer=user_answer,
+        messages=messages_str,
+    )
+
+    #invoke the LLM and store the output
+    result = structured_llm.invoke([HumanMessage(content=prompt)])
+
+    # retrieve existing alerts
+    alerts = list(state.get("alerts", []))
+
+    # human-readable assistant message
+    if result.primary_source:
+        ai_chat_msg = AIMessage(
+            content=(
+                f"Great, you have identified **{result.claim_source}** as the primary source of the claim. "
+                "I'll proceed with the research."
+            )
         )
-    else:
-        # Get the context and conversation history
-        conversation_history = list(state.get("messages", []))
-        user_answer = get_new_user_reply(conversation_history)
-
-        # Use structured output 
-        structured_llm = llm.with_structured_output(PrimarySourceSelection, method="json_mode")
-
-        # Add the last message into a string for the prompt
-        recent_messages = conversation_history[-MAX_HISTORY_MESSAGES:]  # tune this number
-        messages_str = get_buffer_string(recent_messages)
-
-        # Create a prompt
-        prompt = select_primary_source_prompt.format(
-            claim_source=state.get("claim_source", ""),
-            claim_url=state.get("claim_url", ""),
-            user_answer=user_answer,
-            messages=messages_str,
-        )
-
-        #invoke the LLM and store the output
-        result = structured_llm.invoke([HumanMessage(content=prompt)])
-
-        # retrieve existing alerts
-        alerts = list(state.get("alerts", []))
-
-        # human-readable assistant message
-        if result.primary_source:
+    else:   
+        # Add an alert if the primary source is not found
+        if not result.primary_source:
+            alerts.append("primary source not found")
             ai_chat_msg = AIMessage(
                 content=(
-                    f"Great, you have identified **{result.claim_source}** as the primary source of the claim. "
-                    "I'll proceed with the research."
+                    "I couldn’t identify a clear primary source from these results. "
+                    "I'll continue with the research anyway, but note that the original source is still missing."
                 )
             )
-        else:   
-            # Add an alert if the primary source is not found
-            if not result.primary_source:
-                alerts.append("primary source not found")
-                ai_chat_msg = AIMessage(
-                    content=(
-                        "I couldn’t identify a clear primary source from these results. "
-                        "I'll continue with the research anyway, but note that the original source is still missing."
-                    )
-                )
 
-        # Goto next node and update State
-        return Command(
-            goto="get_search_queries",
-            update={
-                "primary_source": result.primary_source,
-                "claim_source": result.claim_source,
-                "claim_url": result.claim_url,
-                "messages": [ai_chat_msg],
-                "alerts": alerts,
-                "next_node": None,
-            },
-        )
+    # Goto next node and update State
+    return {
+        "primary_source": result.primary_source,
+        "claim_source": result.claim_source,
+        "claim_url": result.claim_url,
+        "messages": [ai_chat_msg],
+        "alerts": alerts,
+    }
 
 # ───────────────────────────────────────────────────────────────────────
 # GENERATE QUERIES TO FALSIFY OR VERIFY CLAIM NODE
 # ───────────────────────────────────────────────────────────────────────
-def get_search_queries(state: AgentStateClaim) -> Command[Literal["critical_question"]]:
+def get_search_queries(state: AgentStateClaim):
 
     """ Generate queries to locate the primary source of the claim. """
 
@@ -1356,24 +1169,19 @@ def get_search_queries(state: AgentStateClaim) -> Command[Literal["critical_ques
     # create a human-readable assistant message for the chat
     queries_text = "\n".join(f"- {q}" for q in result.search_queries if q)
     chat_text = (
-        "I will perform a search with these queries, would you like to add or change something?\n"
+        "I will perform a search with these queries:\n"
         f"{queries_text}"
     )
 
     ai_chat_msg = AIMessage(content=chat_text)
 
     # Goto next node and update State  
-    return Command(
-        goto="critical_question", 
-        update={
-            "search_queries": result.search_queries,
-            "messages":  [ai_chat_msg],
-            "next_node": "confirm_search_queries",
-            "awaiting_user": True,
-            "research_focus": "iterate_search",
-        }
-    ) 
-
+    return {
+        "search_queries": result.search_queries,
+        "messages":  [ai_chat_msg],
+        "research_focus": "iterate_search",
+        "question": "would you like to add or change something?"
+    }
 # ───────────────────────────────────────────────────────────────────────
 # ASK TO ITERATE SEARCH NODE
 # ───────────────────────────────────────────────────────────────────────
@@ -1382,60 +1190,51 @@ def iterate_search(state: AgentStateClaim) -> Command[Literal["get_search_querie
 
     """ pick the best / most likely primary source. """
 
-    if state.get("awaiting_user"):
-        ask_msg = AIMessage(content="Do you want to search once more?")
+    # Get an answer from the user
+    user_answer = interrupt("Do you want to search once more?")
+
+    # Get the context and conversation history
+    conversation_history = list(state.get("messages", []))
+
+    # Use structured output 
+    structured_llm = llm.with_structured_output(ConfirmationResult, method="json_mode")
+
+    # Add the last message into a string for the prompt
+    recent_messages = conversation_history[-MAX_HISTORY_MESSAGES:]  # tune this number
+    messages_str = get_buffer_string(recent_messages)
+
+    # Create a prompt
+    prompt = iterate_search_prompt.format(
+                user_answer=user_answer,
+                messages=messages_str,
+    )
+
+    #invoke the LLM and store the output
+    result = structured_llm.invoke([HumanMessage(content=prompt)])
+
+    # retrieve existing alerts
+    alerts = list(state.get("alerts", []))
+
+    # human-readable assistant message
+    if result.confirmed:
+        ai_chat_msg = AIMessage(content="Let's search once more.")
+    else:   
+        ai_chat_msg = AIMessage(content="Good luck with your research, we have completed the search process.")
+
+    # Goto next node and update State
+    if result.confirmed:
         return Command(
-            goto="__end__", 
+            goto="get_search_queries",
             update={
-                "messages": [ask_msg],
-                "next_node": "iterate_search",
-                "awaiting_user": False,
+                "messages": [ai_chat_msg],
+                "next_node": None,
             },
         )
     else:
-        # Get the context and conversation history
-        conversation_history = list(state.get("messages", []))
-        user_answer = get_new_user_reply(conversation_history)
-
-        # Use structured output 
-        structured_llm = llm.with_structured_output(ConfirmationResult, method="json_mode")
-
-        # Add the last message into a string for the prompt
-        recent_messages = conversation_history[-MAX_HISTORY_MESSAGES:]  # tune this number
-        messages_str = get_buffer_string(recent_messages)
-
-        # Create a prompt
-        prompt = iterate_search_prompt.format(
-                    user_answer=user_answer,
-                    messages=messages_str,
+        return Command(
+            goto="__end__",
+            update={
+                "messages": [ai_chat_msg],
+            }
         )
-
-        #invoke the LLM and store the output
-        result = structured_llm.invoke([HumanMessage(content=prompt)])
-
-        # retrieve existing alerts
-        alerts = list(state.get("alerts", []))
-
-        # human-readable assistant message
-        if result.confirmed:
-            ai_chat_msg = AIMessage(content="Let's search once more.")
-        else:   
-            ai_chat_msg = AIMessage(content="Good luck with your research, we have completed the search process.")
-
-        # Goto next node and update State
-        if result.confirmed:
-            return Command(
-                goto="get_search_queries",
-                update={
-                    "messages": [ai_chat_msg],
-                    "next_node": None,
-                },
-            )
-        else:
-            return Command(
-                goto="__end__",
-                update={
-                    "messages": [ai_chat_msg],
-                }
-            )
             

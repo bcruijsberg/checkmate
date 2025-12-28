@@ -7,7 +7,6 @@ import json
 from utils import format_docs
 from langchain_groq import ChatGroq
 from langchain_ollama import ChatOllama
-
 from state_scope import SearchResult, TavilySearchOutput
 
 load_dotenv(".env", override=True)

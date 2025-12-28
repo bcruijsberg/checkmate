@@ -13,7 +13,6 @@ sys.path.append(os.path.abspath("./src"))
 # CLAIM GRAPH
 # ───────────────────────────────────────────────────────────────────────
 from claim_nodes import (
-    router,
     checkable_fact,
     checkable_confirmation,
     retrieve_information,
@@ -40,10 +39,13 @@ from claim_nodes import (
     iterate_search,
     critical_question,
 )
+
 import asyncio
 from langgraph.graph import StateGraph, START, END
 from state_scope import AgentStateClaim
+from langgraph.types import Command
 from langchain_core.messages import HumanMessage, AIMessage
+from langgraph.checkpoint.memory import MemorySaver
 
 st.set_page_config(page_title="CheckMate", page_icon="✅")
 
@@ -66,58 +68,78 @@ st.markdown("""
 # GRAPH SETUP
 # ───────────────────────────────────────────────────────────────────────
 
-claim = StateGraph(AgentStateClaim)
+# Save the compiled graph in session state to avoid recompiling on every interaction
+if "compiled_graph" not in st.session_state:
+    workflow = StateGraph(AgentStateClaim)
 
-#getting all info about the claim nodes
-claim.add_node("checkable_fact", checkable_fact)
-claim.add_node("checkable_confirmation", checkable_confirmation)
-claim.add_node("retrieve_information", retrieve_information)
-claim.add_node("clarify_information", clarify_information)
-claim.add_node("produce_summary", produce_summary)
-claim.add_node("get_confirmation", get_confirmation)
-claim.add_node("critical_question", critical_question)
+    #getting all info about the claim nodes
+    workflow.add_node("checkable_fact", checkable_fact)
+    workflow.add_node("checkable_confirmation", checkable_confirmation)
+    workflow.add_node("retrieve_information", retrieve_information)
+    workflow.add_node("clarify_information", clarify_information)
+    workflow.add_node("produce_summary", produce_summary)
+    workflow.add_node("get_confirmation", get_confirmation)
+    workflow.add_node("critical_question", critical_question)
 
-#Claim matching nodes
-claim.add_node("get_rag_queries", get_rag_queries)
-claim.add_node("confirm_rag_queries", confirm_rag_queries)
-claim.add_node("rag_retrieve_worker", rag_retrieve_worker)
-claim.add_node("reduce_rag_results", reduce_rag_results)
-claim.add_node("structure_claim_matching", structure_claim_matching)
-claim.add_node("match_or_continue", match_or_continue)
+    #Claim matching nodes
+    workflow.add_node("get_rag_queries", get_rag_queries)
+    workflow.add_node("confirm_rag_queries", confirm_rag_queries)
+    workflow.add_node("rag_retrieve_worker", rag_retrieve_worker)
+    workflow.add_node("reduce_rag_results", reduce_rag_results)
+    workflow.add_node("structure_claim_matching", structure_claim_matching)
+    workflow.add_node("match_or_continue", match_or_continue)
 
-# Source finding nodes and search query nodes
-claim.add_node("get_source", get_source)
-claim.add_node("get_location_source", get_location_source)
-claim.add_node("get_source_queries", get_source_queries)
-claim.add_node("confirm_search_queries", confirm_search_queries)
-claim.add_node("reset_search_state", reset_search_state)
-claim.add_node("find_sources_worker", find_sources_worker)
-claim.add_node("reduce_sources", reduce_sources)
-claim.add_node("select_primary_source", select_primary_source)
-claim.add_node("get_search_queries", get_search_queries)
-claim.add_node("iterate_search",iterate_search)
-claim.add_node("router", router)
+    # Source finding nodes and search query nodes
+    workflow.add_node("get_source", get_source)
+    workflow.add_node("get_location_source", get_location_source)
+    workflow.add_node("get_source_queries", get_source_queries)
+    workflow.add_node("confirm_search_queries", confirm_search_queries)
+    workflow.add_node("reset_search_state", reset_search_state)
+    workflow.add_node("find_sources_worker", find_sources_worker)
+    workflow.add_node("reduce_sources", reduce_sources)
+    workflow.add_node("select_primary_source", select_primary_source)
+    workflow.add_node("get_search_queries", get_search_queries)
+    workflow.add_node("iterate_search",iterate_search)
 
-# Entry point
-claim.add_edge(START, "router")
-claim.add_edge("checkable_fact", "critical_question")
-claim.add_edge("retrieve_information", "clarify_information")
-claim.add_edge("produce_summary", "critical_question")
+    # Entry point
+    workflow.add_edge(START, "checkable_fact")
+    workflow.add_edge("checkable_fact", "critical_question")
+    workflow.add_edge("checkable_fact", "checkable_confirmation")
+    workflow.add_edge("retrieve_information", "clarify_information")
+    workflow.add_edge("produce_summary", "get_confirmation")
 
-# Connecting claim matching nodes
-claim.add_conditional_edges("confirm_rag_queries", route_rag_confirm)
-claim.add_edge("rag_retrieve_worker", "reduce_rag_results")
-claim.add_edge("reduce_rag_results", "structure_claim_matching")
+    # Connecting claim matching nodes
+    workflow.add_edge("get_rag_queries", "confirm_rag_queries")
+    workflow.add_edge("get_rag_queries", "critical_question")
+    workflow.add_conditional_edges("confirm_rag_queries", route_rag_confirm)
+    workflow.add_edge("rag_retrieve_worker", "reduce_rag_results")
+    workflow.add_edge("reduce_rag_results", "structure_claim_matching")
 
-# Connecting source finding and search query nodes
-claim.add_edge("get_source_queries", "critical_question")
-claim.add_edge("get_search_queries", "critical_question")
-claim.add_edge("confirm_search_queries", "reset_search_state")
-claim.add_conditional_edges("reset_search_state", route_after_confirm)
-claim.add_edge("find_sources_worker", "reduce_sources")
+    # Connecting source finding and search query nodes
+    workflow.add_edge("get_source", "get_location_source")
+    workflow.add_edge("get_source_queries", "critical_question")
+    workflow.add_edge("get_source_queries", "confirm_search_queries")
+    workflow.add_edge("get_search_queries", "critical_question")
+    workflow.add_edge("confirm_search_queries", "reset_search_state")
+    workflow.add_conditional_edges("reset_search_state", route_after_confirm)
+    workflow.add_edge("find_sources_worker", "reduce_sources")
+    workflow.add_edge("select_primary_source", "get_search_queries")
+    #workflow.add_edge("get_search_queries", "critical_question")
+    workflow.add_edge("get_search_queries", "confirm_search_queries")
 
-claim_flow = claim.compile()
+    # Ensure the critical_question branch terminates
+    workflow.add_edge("critical_question", END)
 
+    # compile the graph
+    memory = MemorySaver()
+    st.session_state.compiled_graph = workflow.compile(checkpointer=memory)
+
+# Use the persistent version
+claim_flow = st.session_state.compiled_graph
+
+# ───────────────────────────────────────────────────────────────────────
+# HELPER FUNCTIONS
+# ───────────────────────────────────────────────────────────────────────
 
 def flush_new_ai_messages():
     """
@@ -142,6 +164,15 @@ def flush_new_ai_messages():
         with st.chat_message("assistant"):
             st.write(text)
 
+def handle_graph_output(claim_out):
+    """Update local session state with the new graph state."""
+    st.session_state.claim_state = claim_out
+    
+    # Check if teh graph was pause by an interrupt
+    snapshot = claim_flow.get_state(st.session_state.graph_config)
+    if not snapshot.next:
+        st.session_state.claim_done = True
+
 
 # ───────────────────────────────────────────────────────────────────────
 # STREAMLIT UI
@@ -150,6 +181,10 @@ def flush_new_ai_messages():
 st.title("🕵️ CheckMate – Claim checker")
 
 claim_question = "What claim do you want to investigate?"
+
+# The key to the memory, so it remembers to what state it should return
+if "graph_config" not in st.session_state:
+    st.session_state.graph_config = {"configurable": {"thread_id": "streamlit_session"}}
 
 # Initialize UI history for MAIN chat
 if "messages" not in st.session_state:
@@ -164,33 +199,14 @@ if "claim_state" not in st.session_state:
     st.session_state.claim_state = {
         "messages": [],
         "messages_critical": [],
-        "claim": None,
-        "checkable": None,
-        "additional_context": None,
-        "subject": None,
-        "quantitative": None,
-        "precision": None,
-        "based_on": None,
         "queries_confirmed": False,
-        "question": None,
         "alerts": [],
-        "summary": None,
         "awaiting_user": False,
-        "explanation": None,
-        "tool_trace":None,
         "rag_trace": [],
-        "next_node": None,
         "search_queries": [],
         "tavily_context": [],
-        "current_query": None,
-        "research_focus": None,
-        "claim_url": None,
-        "claim_source": None,
         "primary_source": False,
-        "source_description": None,
-        "match": False,
-        "critical_question": None,
-        "reasoning_summary": None
+        "match": False
     }
     st.session_state.graph_cursor = 0
 
@@ -218,51 +234,59 @@ main_prompt = st.chat_input(
 )
 
 # ───────────────────────────────────────────────────────────────────────
-# HANDLE INPUTS
+# HANDLE INPUTS and OUTPUTS
 # ───────────────────────────────────────────────────────────────────────
-
-
-def handle_graph_output(claim_out):
-    """Shared post-processing after claim_flow.invoke."""
-    st.session_state.claim_state = claim_out
-    awaiting = claim_out.get("awaiting_user", False)
-    if (not awaiting) and (
-        claim_out.get("research_results") is not None
-        or claim_out.get("primary_source")
-    ):
-        st.session_state.claim_done = True
-
 
 # MAIN CHAT INPUT (has priority)
 if main_prompt:
-
-    # Immediately show the user message
     with st.chat_message("user"):
         st.write(main_prompt)
-
-    # Save to UI history
     st.session_state.messages.append({"role": "user", "content": main_prompt})
 
-    # Save into LangGraph state
-    if st.session_state.claim_state["claim"] is None:
-        st.session_state.claim_state["claim"] = main_prompt
-        st.session_state.claim_state["messages"] = [
-            HumanMessage(content=main_prompt)
-        ]
-    else:
-        st.session_state.claim_state["messages"].append(
-            HumanMessage(content=main_prompt)
-        )
+    # Get the latest state from the persistent memory
+    snapshot = claim_flow.get_state(st.session_state.graph_config)
+    
+    with st.spinner("🔎 Analyzing..."):
+        # Check if the graph is waiting at an interrupt
+        if snapshot.next:
+            # RESUME
+            claim_out = asyncio.run(claim_flow.ainvoke(
+                Command(resume=main_prompt), 
+                config=st.session_state.graph_config
+            ))
+        else:
+            # START FRESH
+            # Only send the state the first time
+            initial_state = {
+                "messages": [HumanMessage(content=main_prompt)],
+                "claim": main_prompt
+            }
+            claim_out = asyncio.run(claim_flow.ainvoke(
+                initial_state, 
+                config=st.session_state.graph_config
+            ))
 
-    # Run the graph node flow
-    with st.spinner("🔎 Searching for sources and analyzing results..."):
-        claim_out = asyncio.run(claim_flow.ainvoke(st.session_state.claim_state))
-
+    # 3. Process output
     handle_graph_output(claim_out)
-
-    # Render new AI messages immediately
     flush_new_ai_messages()
 
+    # Check if the graph is currently paused and display the question it's waiting on
+    snapshot = claim_flow.get_state(st.session_state.graph_config)
+    if snapshot.tasks:
+        for task in snapshot.tasks:
+            if task.interrupts:
+                # This grabs the question text from your interrupt()
+                interrupt_msg = task.interrupts[0].value 
+                
+                # Check UI history to avoid double-rendering if the user refreshes
+                if not st.session_state.messages or st.session_state.messages[-1]["content"] != interrupt_msg:
+                    st.session_state.messages.append({"role": "assistant", "content": interrupt_msg})
+                    with st.chat_message("assistant"):
+                        st.write(interrupt_msg)
+
+# ───────────────────────────────────────────────────────────────────────
+# CRITICAL THINKING SIDEBAR CHAT
+# ───────────────────────────────────────────────────────────────────────
 with st.sidebar:
     st.subheader("Critical thinking chat")
     st.caption(

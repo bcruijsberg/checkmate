@@ -23,9 +23,7 @@ class AgentStateClaim(MessagesState):
     question: Optional[str]
     alerts: List[str] = Field(default_factory=list)
     summary: Optional[str]
-    awaiting_user: bool
     explanation: Optional[str]
-    next_node: Optional[str]
     tool_trace: Optional[str]
     rag_trace: Annotated[List[Dict[str, Any]], operator.add]
     claim_matching_result: Optional[str]
