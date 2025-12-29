@@ -15,6 +15,7 @@ sys.path.append(os.path.abspath("./src"))
 from claim_nodes import (
     checkable_fact,
     checkable_confirmation,
+    identify_url,
     retrieve_information,
     clarify_information,
     produce_summary,
@@ -23,11 +24,9 @@ from claim_nodes import (
     confirm_rag_queries,
     route_rag_confirm,
     rag_retrieve_worker,
-    reduce_rag_results,
-    structure_claim_matching,
+    reduce_claim_matching,
     match_or_continue,
-    get_source,
-    get_location_source,
+    primary_source,
     get_source_queries,
     get_search_queries,
     confirm_search_queries,
@@ -75,6 +74,7 @@ if "compiled_graph" not in st.session_state:
     #getting all info about the claim nodes
     workflow.add_node("checkable_fact", checkable_fact)
     workflow.add_node("checkable_confirmation", checkable_confirmation)
+    workflow.add_node("identify_url", identify_url)
     workflow.add_node("retrieve_information", retrieve_information)
     workflow.add_node("clarify_information", clarify_information)
     workflow.add_node("produce_summary", produce_summary)
@@ -85,13 +85,11 @@ if "compiled_graph" not in st.session_state:
     workflow.add_node("get_rag_queries", get_rag_queries)
     workflow.add_node("confirm_rag_queries", confirm_rag_queries)
     workflow.add_node("rag_retrieve_worker", rag_retrieve_worker)
-    workflow.add_node("reduce_rag_results", reduce_rag_results)
-    workflow.add_node("structure_claim_matching", structure_claim_matching)
+    workflow.add_node("reduce_claim_matching", reduce_claim_matching)
     workflow.add_node("match_or_continue", match_or_continue)
 
     # Source finding nodes and search query nodes
-    workflow.add_node("get_source", get_source)
-    workflow.add_node("get_location_source", get_location_source)
+    workflow.add_node("primary_source", primary_source)
     workflow.add_node("get_source_queries", get_source_queries)
     workflow.add_node("confirm_search_queries", confirm_search_queries)
     workflow.add_node("reset_search_state", reset_search_state)
@@ -105,6 +103,7 @@ if "compiled_graph" not in st.session_state:
     workflow.add_edge(START, "checkable_fact")
     workflow.add_edge("checkable_fact", "critical_question")
     workflow.add_edge("checkable_fact", "checkable_confirmation")
+    workflow.add_edge("identify_url", "retrieve_information")
     workflow.add_edge("retrieve_information", "clarify_information")
     workflow.add_edge("produce_summary", "get_confirmation")
 
@@ -112,11 +111,9 @@ if "compiled_graph" not in st.session_state:
     workflow.add_edge("get_rag_queries", "confirm_rag_queries")
     workflow.add_edge("get_rag_queries", "critical_question")
     workflow.add_conditional_edges("confirm_rag_queries", route_rag_confirm)
-    workflow.add_edge("rag_retrieve_worker", "reduce_rag_results")
-    workflow.add_edge("reduce_rag_results", "structure_claim_matching")
+    workflow.add_edge("rag_retrieve_worker", "reduce_claim_matching")
 
     # Connecting source finding and search query nodes
-    workflow.add_edge("get_source", "get_location_source")
     workflow.add_edge("get_source_queries", "critical_question")
     workflow.add_edge("get_source_queries", "confirm_search_queries")
     workflow.add_edge("get_search_queries", "critical_question")
@@ -124,7 +121,6 @@ if "compiled_graph" not in st.session_state:
     workflow.add_conditional_edges("reset_search_state", route_after_confirm)
     workflow.add_edge("find_sources_worker", "reduce_sources")
     workflow.add_edge("select_primary_source", "get_search_queries")
-    #workflow.add_edge("get_search_queries", "critical_question")
     workflow.add_edge("get_search_queries", "confirm_search_queries")
 
     # Ensure the critical_question branch terminates

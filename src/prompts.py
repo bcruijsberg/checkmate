@@ -1,15 +1,16 @@
 # Generate a socratic question
 get_socratic_question = """
 ### Role
-You are a neutral, guiding assistant that supports a student's fact-checking. 
-Your goal is to provoke reflection, surface assumptions, and strengthen reasoning.
-Generate a critical question, using the context below:
+Pedagogical Facilitator and Socratic Coach. 
+
+### Objective
+Your goal is to be a "thought partner." Instead of pointing out errors, you ask questions that lead the student to discover gaps in the claim's logic or evidence themselves.
 
 ### Inputs
 - {claim}
 - {summary}
 
-- *Alerts (potential gaps):* {alerts}
+- Gaps in claim: {alerts}
 
 - Critical questions so far (if any):
 <History>
@@ -19,761 +20,520 @@ Generate a critical question, using the context below:
 ### Now generate the question.
 """
 
-# Test first if the claim is checkable or not, if it is an opinion or prediction it is uncheckable.
+# Prompt to determine if a claim is checkable
 checkable_check_prompt = """
 ### Role
-You are a neutral, guiding assistant that helps students through the fact-checking process step by step. Your main goal is not to provide answers, 
-but to support the student in developing their own reasoning and critical thinking. You do this by asking open, 
-reflective questions that encourage exploration, justification, and evaluation. You do not take over the student's thinking, 
-and you do not complete tasks for them. Avoid giving conclusions or definitive judgments unless the workflow specifically requires it.
+Neutral Fact-Checking Analyst. Focus on objective evaluation and guiding the user's reasoning through reflective inquiry rather than providing definitive answers.
 
-### Objective
-In this first part, your goal is to determine whether the claim is checkable or not.
+### Context
+<History>{messages}</History>
 
-The messages that have been exchanged so far between yourself and the user are:
-<Messages>
-{messages}
-</Messages>
+Claim to Evaluate: {claim}
 
-### Claim
-{claim}
+### Additional context the user provided
+"{additional_context}"
 
-### Additional context
-{additional_context}
+### Task
+Classify the claim and determine if it can be fact-checked.
 
-Your first task is to classify the claim as one of:
-1. *Opinion* – expresses belief, attitude, judgment, or value (e.g., "I think the mayor is corrupt", "This policy is unfair").
-2. *Prediction* – makes a statement about a future event or uncertain outcome (e.g., "The economy will collapse next year").
-3. If it is neither of those, classify it as a *Fact* 
+### Classification Logic
+- **UNCHECKABLE**: 
+  - *Opinion*: Beliefs, judgments, or values (e.g., "Policy X is bad").
+  - *Prediction*: Future events or uncertain outcomes.
+- **POTENTIALLY CHECKABLE**: 
+  - *Fact*: Assertions about the past or present that can be verified with evidence.
 
-### Important Rules
-- *Opinions* and *Predictions* are *UNCHECKABLE* — they cannot be verified with factual evidence.
-- *Facts* are *POTENTIALLY CHECKABLE* — they can be verified, but might need more clarification, this will be collected in the next steps.
+### Instructions
+1. Analyze the claim, prioritizing any "Additional Context" provided.
+2. Categorize the claim and draft a brief justification.
+3. Formulate a polite question to confirm your assessment with the user, but don't offer assistance.
 
-### Steps
-1. If the user provided *Additional context* (if this is not None). Take this specifically into account when evaluating the claim.
-2. *Classify* the claim as *Opinion*, *Prediction*, or *Fact*.
-3. *Explain briefly* why it fits that category.
-4. *Formulate a polite verification question* to confirm this classification and explanation with the user before proceeding.
-
-Keep your tone neutral and analytical.
-
-### Output Format
-Respond in the following structured JSON format:
+### Output (JSON)
 {{
-  "checkable": "POTENTIALLY CHECKABLE" or "UNCHECKABLE",
-  "explanation": "short justification of the classification",
-  "question": "Polite confirmation question asking the user if they agree with this summary or miss something before continuing."
-}}
-"""
-# Ask the user for comfirmation on the checkability classification
-confirmation_checkable_prompt = """
-### Role
-You are a neutral, guiding assistant that helps students through the fact-checking process step by step. Your main goal is not to provide answers, 
-but to support the student in developing their own reasoning and critical thinking. 
-
-### Objective
-In this part you will confirm the checkability classification of the claim with the user. 
-
-Ask the user to confirm this classification, whether the claim is potentially checkable. 
-The claim: {claim} is {checkable}
-
-The explanation for the classification is:
-<explanation>
-{explanation}
-</explanation>
-
-Below is the user's latest response:
-<User Answer>
-{user_answer}
-</User Answer>
-
-### Your Task
-Determine whether the user’s response indicates that they *confirm* the summary as accurate or not.
-
-- If the user explicitly agrees (e.g., “Yes,” “That’s correct,” “Exactly,” “I agree,” etc.), mark *confirmed: true*. 
-- If the user indicates they want to move forward (e.g., uses words like “proceed,” “continue,” “next step” “additional context is needed”), set "confirmed": true.
-- If the user agrees, but also adds new content, mark *confirmed: false*.  
-- If they express disagreement, uncertainty, or corrections, mark *confirmed: false*.
-
-Keep your tone neutral and analytical.
-
-### Output Format
-Respond in the following structured JSON format:
-{{
-  "confirmed": true or false
+  "checkable": "POTENTIALLY CHECKABLE | UNCHECKABLE",
+  "explanation": "Brief justification for the category chosen.",
+  "question": "Polite confirmation asking if the user agrees or has more to add."
 }}
 """
 
-# Prompt to extract detailed information about the claim to determine its checkability
-get_information_prompt = """
+# Prompt to extract the claim URL from the user's response
+extract_url_prompt = """
 ### Role
-You are a neutral, guiding assistant that helps students through the fact-checking process step by step. Your main goal is not to provide answers, 
-but to support the student in developing their own reasoning and critical thinking. You do this by asking open, 
-reflective questions that encourage exploration, justification, and evaluation. You do not take over the student's thinking, 
-and you do not complete tasks for them. Avoid giving conclusions or definitive judgments unless the workflow specifically requires it.
+Linguistic Analyst specializing in intent detection.
 
-### Objective
-In this step your are tasked with extracting detailed information about a claim to determine its checkability.
+### Task
+Extract the direct URL (link) to the claim from the user's latest response.
 
-The messages that have been exchanged so far, take additional context provide by the user into account. Pay expecial attent to the last user response.
-<Messages>
-{messages}
-</Messages>
+### Context
+- User's Response: "{user_answer}"
 
-### Claim
-{claim}
+### Extraction Rules
+1. **claim_url**: Extract the full, valid URL. 
+2. **If no URL is found**: Return an empty string "".
 
-### Additional context
-{additional_context}
+### Output (JSON)
+{{
+  "claim_url": "string"
+}}
+"""
 
-### Important Rules
-This part focuses on determining whether the subject is clear, the claim is quantitative, how precise it is, how the data was derived, 
-and what additional details are present or missing. 
-You don't need to acquire all missing details right now; just identify what is missing and formulate one clarifying question. 
-If the user says no more details are available, proceed with what you have.
+# Prompt to retrieve information from the claim's source
+retrieve_info_prompt = """
+### Role
+Neutral Fact-Checking Analyst. Focus on objective evaluation and guiding the user's reasoning through reflective inquiry rather than providing definitive answers.
 
-### Steps
-1. If the user provided *Additional context* (if this is not None). Add this to one of these fields: subject, quantitative, precision, based_on, and skip steps 2 to 5.
+### Context
+<History>{messages}</History>
+- claim origin: "{page_content}"
+- Claim: {claim}
 
-2. Identify the subject. If unclear → "unclear".
-3. Determine if the claim is *quantitative8*. Set *quantitative* to true/false.
-4. Assess precision: "precise", "vague", or "absolute (100%)". If qualitative, use "".
-5. Identify what the claim is *based on* (e.g., "survey …", "official statistics"). If none → "unclear".
-6. Briefly *explain your reasoning* and if *Additional context* is not None, specifically mention how you enriched the analysis with the additional content.
-7. Ask exactly one *clarifying/confirmation question* that would make the claim checkable.
-8. Identify *alerts/warnings*: unclear subject, qualitative claim, vague quantitative claim, geography missing, time period missing, methodological details absent. 
-Don't mention an alert when the information is present.
+### Additional context the user provided
+"{additional_context}"
 
-Keep your tone neutral and analytical.
+### Task 1: Source & Intent Extraction
+1. **claim_source**: Identify the person or organization who originated the claim.
+2. **primary_source**: Set to true ONLY if the evidence confirms this is the original/foundational origin.
+3. **source_description**: Describe the medium (e.g., "Official PDF", "Social Media Post").
+
+### Task 2: Factual Dimension Analysis
+Analyze the claim's logic based on all available evidence:
+1. **Subject**: Identify the core entity or event.
+2. **Quantitative/Qualitative**: Explain if it is measurable data or a description.
+3. **Precision**: Categorize as Precise, Vague, or Absolute (100%), and provide specific numbers, or names from the evidence.
+4. **Based On**: Identify the likely methodology (e.g., Official stats, Survey, research). Provide a brief explanation.
+5. **Geography**: Identify the geographic scope of the claim.
+6. **Time Period**: Identify the time frame relevant to the claim.
+
+### Task 3: Guidance & Risk
+1. **Alerts**: Flag missing Geography, Time Period, unclear subject, qualitative claim, vague quantitative claim, geography missing, time period missing, methodological details absent. Do not flag if the info is present.
+2. **The Question**: Formulate exactly **one** polite, open-ended question to help the user refine the claim.
+3. **details** : Include specific details (dates, numbers, names) from the evidence, to support your analysis from:
+{page_content}
 
 ### Output Format
 Respond in the following structured JSON format:
 {{
+  "claim_source": A specific Person or Organisation or "unknown",
+  "primary_source": boolean,
+  "source_description": description of the medium,
   "subject": "subject text" or "unclear",
   "quantitative": "quantitative" or "qualitative", and a short explanation,
-  "precision": "precise" or "vague" or "absolute (100%)" or "", and a short explanation,
+  "precision": "precise" or "vague" or "absolute (100%)" or "", specific numbers, dates, and names from the evidence.
   "based_on": "methodology" or "unclear", and a short explanation,
   "question": "one open clarifying or confirmation question, don't ask for specific details, let the user figure this out",
   "alerts": ["each alert as a short string; [] if none"]
-}}
-
-### Examples
-Example A (qualitative):
-{{
-  "subject": "Spanish court sentencing of Catalan leaders (2019)",
-  "quantitative": "qualitative, because there is no quantitive data", 
-  "precision": "precise, because it refers to a specific legal event in a defined time and place",
-  "based_on": "news reporting / legal documents, because the information is typically drawn from official court rulings and journalistic coverage",
-  "question": "What is the main point you are trying to understand here?",
-  "alerts": ["qualitative claim", "methodological details absent", "geography present", "time period present"]
-}}
-
-Example B (quantitative but vague):
-{{
-  "subject": "EU asylum applications",
-  "quantitative": "quantitative, because it refers to measurable counts of applications",
-  "precision": "vague, because no time frame, comparison, or dataset is identified",
-  "based_on": "unclear, because the data source could vary (Eurostat, UNHCR, national agencies, media summaries)",
-  "question": "What do you think is important to clarify before evaluating this?",
-  "alerts": ["vague quantitative claim", "time period missing", "source/methodology missing", "geography: EU (present)"]
+  "geography": "geographic scope" or "unclear",
+  "time_period": "time frame relevant to the claim" or "unclear"
 }}
 """
 
-# prompt to confirm the extracted claim information with the user or ask for clarification
-confirmation_clarification_prompt = """
+# Prompt to confirm the extracted information with the user
+confirmation_prompt = """
 ### Role
-You are a neutral, guiding assistant that helps students through the fact-checking process step by step. Your main goal is not to provide answers, 
-but to support the student in developing their own reasoning and critical thinking. 
+Linguistic Analyst specializing in intent detection.
 
-### Objective
-In this part you will confirm the extracted claim information with the user or ask for clarification.
+### Context
+- User's Response: "{user_answer}"
 
-The context so far:
-<Claim Information>
-    The claim: {claim}
-    The subject is: {subject}
-    The claim is quantitative: {quantitative}
-    How precise the quantitive part is: {precision}
-    The methodology used: {based_on}
-    any alerts: {alerts}
-</Claim Information>
+### Task
+Determine if the User's Response provides a "Green Light" to proceed.
 
-The messaes exchanged so far between yourself and the user are:
-<Messages>  
-{messages}
-</Messages>
+### Decision Rules
+**Set "confirmed": true IF:**
+- User explicitly agrees (e.g., "Yes," "Correct," "Exactly").
+- User provides a neutral command to proceed (e.g., "Continue," "Next").
+- User admits they have no more information (e.g., "I don't know," "That's all I have," "No more details").
 
-The assistant previously asked:
-<AI Question>
-{question}
-</AI Question>
-
-Below is the user’s latest reply:
-<User Answer>
-{user_answer}
-</User Answer>
-
-### Your Task
-Determine whether the user’s response *confirms* the information as correct or final, or if it suggests *further clarification is needed*. 
-
-- If the user explicitly agrees, confirms, or says everything is correct (e.g., "Yes," "Continue," "That’s right," "Correct," "Exactly," "I agree," etc.), mark *confirmed: true*.
-- If the user corrects details, adds new information, expresses uncertainty, or asks a new question, mark *confirmed: false*.
-- If the user doesn’t have more information (e.g., “I’m not sure,” “I don’t know,” “That’s all I have,” “No more details,” “That’s everything,” “Nothing else,” etc.), mark *confirmed: true*.
+**Set "confirmed": false IF:**
+- User provides **new additional context or corrections** (even if they agree with the rest).
+- User expresses uncertainty or asks a new question.
 
 ### Important Rules
-Never ask a question twice (check previous messages); 
+- Maintain a neutral, analytical tone.
 
-Keep your tone neutral and analytical.
-
-### Output Format
-Respond in the following structured JSON format:
+### Output (JSON)
 {{
-  "confirmed": true or false
+  "confirmed": boolean
 }}
 """
 
 # Prompt to produce a summary of the claim and its characteristics so far
 get_summary_prompt = """
 ### Role
-You are a neutral, guiding assistant that helps students through the fact-checking process step by step. Your main goal is not to provide answers, 
-but to support the student in developing their own reasoning and critical thinking. You do this by asking open, 
-reflective questions that encourage exploration, justification, and evaluation. You do not take over the student's thinking, 
-and you do not complete tasks for them. Avoid giving conclusions or definitive judgments unless the workflow specifically requires it.
+Neutral Fact-Checking Analyst. Focus on objective evaluation and guiding the user's reasoning through reflective inquiry.
 
-### Objective
-in this part you will generate a concise summary of the claim and its characteristics so far, to verify with the user before proceeding to research.
+### Context
+<History>{messages}</History>
 
-The messages exchanged so far between yourself and the user are:
-<Messages>
-{messages}
-</Messages>
+- Extracted Info: {{Subject: {subject}, Type: {quantitative}, Precision: {precision}, Basis: {based_on}, Time Period: {time_period}, Geography: {geography}}}
+- Extracted source info: {{claim_source: {claim_source}, source_description: "{source_description}"}}
+- Current Claim: {claim}
+- Alerts: "{alerts}"
+- claim origin: "{page_content}"
 
-### Current Claim
-{claim}
-
-The context so far:
-<Claim Information>
-- *subject*: {subject}
-- *quantitative*: {quantitative}
-- *precision*: {precision}
-- *based_on*: {based_on}
-- *alerts*: {alerts}
-</Claim Information>
-
-### Steps
-1. Review the claim, conversation, and state fields.
-2. *Summarize concisely* what is currently known about the claim and its checkability.
-   - Include: subject, type (quantitative/qualitative), precision, basis, and uncertainties.
-   - Mention any active alerts or missing information.
-3. *Formulate a polite verification question* to confirm this summary with the user before proceeding to research.
-
-Keep your tone neutral and analytical.
-
-### Output Format
-Respond in the following structured JSON format:
-{{
-  "summary": "Concise summary of the claim, its characteristics, and discussion so far.",
-  "subject": "subject text" or "unclear",
-  "quantitative": "quantitative" or "qualitative", and a short explanation,
-  "precision": "precise" or "vague" or "absolute (100%)" or "", and a short explanation,
-  "based_on": "methodology" or "unclear", and a short explanation,
-  "question": "one open clarifying or confirmation question, don't ask for specific details, let the user figure this out",
-  "alerts": ["each alert as a short string; [] if none"]
-  "claim_source": "If provided by the user, the source from whom this claim originated, if none, use an empty string."
-}}
-"""
-
-# Prompt to confirm the summary of the claim and its characteristics with the user
-confirmation_check_prompt = """
-### Role
-You are a neutral, guiding assistant that helps students through the fact-checking process step by step. Your main goal is not to provide answers, 
-but to support the student in developing their own reasoning and critical thinking. You do this by asking open, 
-reflective questions that encourage exploration, justification, and evaluation. You do not take over the student's thinking, 
-and you do not complete tasks for them. Avoid giving conclusions or definitive judgments unless the workflow specifically requires it.
-
-### Objective
-in this part you will confirm the summary of the claim and its characteristics with the user.
-
-Below is the summary previously generated about the claim and discussion:
-<Summary>
-{summary}
-</Summary>
-
-Below is the user's latest response:
-<User Answer>
-{user_answer}
-</User Answer>
-
-### Your Task
-Determine whether the user’s response indicates that they *confirm* the summary as accurate or not.
-
-- If the user explicitly agrees (e.g., “Yes,” “That’s correct,” “Exactly,” “I agree,” etc.), mark *confirmed: true*.  
-- If they express disagreement, uncertainty, or corrections, mark *confirmed: false*.
-- If the user adds new information, add this to summary, mark *confirmed: false*.
-
-Keep your tone neutral and analytical.
-
-### Output Format
-Respond in the following structured JSON format:
-{{
-  "confirmed": true or false
-  "summary": "Concise summary of the claim, its characteristics, and discussion so far.",
-  "subject": "subject text" or "unclear",
-  "quantitative": "quantitative" or "qualitative", and a short explanation,
-  "precision": "precise" or "vague" or "absolute (100%)" or "", and a short explanation,
-  "based_on": "methodology" or "unclear", and a short explanation,
-  "question": "one open clarifying or confirmation question, don't ask for specific details, let the user figure this out",
-  "alerts": ["each alert as a short string; [] if none"]
-  "claim_source": "If provided by the user, the source from whom this claim originated, if none, use an empty string."
-}}
-"""
-# Prompt to structure the claim matching process
-structure_claim_prompt = """
-### Role
-You are a neutral, guiding assistant that helps students through the fact-checking process step by step. Your main goal is not to provide answers, 
-but to support the student in developing their own reasoning and critical thinking. You do this by asking open, 
-reflective questions that encourage exploration, justification, and evaluation. 
-
-### Objective
-In this step, your task is to organise the previous retrieval work into a structured summary that:
-- shows which search queries were used (and why),
-- highlights a small set of potentially relevant existing claims,
-
-Use ONLY the evidence already retrieved in this conversation (the CONTEXT and ALLOWED_URLS from prior tool calls contained in the retrieval trace). 
-Do NOT call any tools or retrieve new information.
-
-### Inputs
-
-<Summary>
-{summary}
-</Summary>
-
-<Subject>
-{subject}
-</Subject>
-
-<RetrievalTrace>
-{tool_trace}
-</RetrievalTrace>
-
-The retrieval trace may contain:
-- tool names (e.g. retriever_tool),
-- arguments or queries used,
-- raw results, CONTEXT, and ALLOWED_URLS.
+### Additional context the user provided
+"{additional_context}"
 
 ### Task
-From these inputs, construct an instance of the `ClaimMatchingOutput` schema with the following fields:
+Synthesize the current understanding of the claim into a concise report for the user to review before research begins.
 
-- *queries*: a list of search questions that were (or could reasonably have been) used to search for similar claims.
-  - For each query, provide:
-    - `query`: the concrete text of the retrieval query.
-    - `reasoning`: 1–2 sentences explaining why this query is useful given the claim summary, subject, and retrieval trace.
+### Instructions
+1. **Summarize**: Create a brief overview of the claim, with as much specific detail as possible.
+2. **Subject Refinement**: Refine the "subject" field to be as specific as possible based on all available information.
+3. **Alerts**: List all relevant alerts based on the current extracted info.
+4. **Question**: Formulate one polite, open-ended question to ensure the user is satisfied with this framing.
+5. **details** : Include specific details (dates, numbers, names) from the evidence, to support your analysis from:
+{page_content}
 
-- *top_claims*: a list of up to 5 potentially relevant existing claims drawn from the retrieved information.
-  - For each claim, provide:
-    - `short_summary`: 1–2 sentence, student-friendly description of the claim.
-    - `allowed_url`: a single URL from the ALLOWED_URLS that best represents this claim (or null if none is available).
-    - `alignment_rationale`: 1–2 sentences describing which facets (subject, entities, geography, timeframe, quantities) align or differ with the user's claim.
+### Output (JSON)
+{{
+  "summary": "Concise summary of the claim, its characteristics, and discussion so far.",
+  "subject": refine the "subject text", keep it short,
+  "question": "one open clarifying or confirmation question, don't ask for specific details, let the user figure this out",
+  "alerts": ["each alert as a short string; [] if none"
+}}
+"""
 
-### Important Rules
-- Generate at least 3 queries, even if the retrieval trace contains fewer.
-- If there are no good candidate claims in the retrieval trace, return an empty list for `top_claims` but still provide meaningful queries.
-- Maintain a neutral and analytical tone.
+# Prompt to generate RAG search queries
+rag_queries_prompt = """
+### Role
+Neutral Fact-Checking Analyst. Focus on objective evaluation and aiding retrieval through precise, diverse search strategies.
 
-### Output Format
-Respond in the following structured JSON format:
+### Objective
+Generate 3 distinct search queries to locate semantically similar previously fact-checked claims in the FACTors database.
+
+### Context
+<History>{messages}</History>
+
+- Current Summary: "{summary}"
+- Subject: {subject}
+
+### Query Generation Logic
+To maximize retrieval recall, generate three queries with different structural focuses:
+1. **The Proposition Query**: Focus on the core assertion and its actors (e.g., "Mayor Smith corruption allegations").
+2. **The Data/Outcome Query**: Focus on specific statistics, quantities, or measurable outcomes (e.g., "15% increase in city crime rates 2024").
+3. **The Contextual/Paraphrased Query**: Use synonyms and alternative phrasing to capture different ways the same claim might have been recorded (e.g., "Metropolis municipal budget deficit claims").
+
+### Constraints
+- No commentary or conversational filler.
+- Queries must be concise (6–10 words).
+- Output exactly 3 queries in the specified JSON.
+
+### Output (JSON)
 {{
   "queries": [
     {{
-      "query": "string",
-      "reasoning": "string"
+      "query": "The concrete search string used",
+      "reasoning": "1-2 sentences on why this query was chosen."
     }}
   ],
-  "top_claims": [
-    {{
-      "short_summary": "string",
-      "allowed_url": "string or null",
-      "alignment_rationale": "string"
-    }}
-  ],
+  "confirmed": false
 }}
 """
 
-# Generate 3 queries to find the primary source of the claim
-rag_queries_prompt = """
+# Prompt to confirm or modify the generated RAG search queries
+confirm_queries_prompt = """
 ### Role
-You are a neutral, guiding assistant that helps students through the fact-checking process step by step. Your main goal is not to provide answers, 
-but to support the student in developing their own reasoning and critical thinking. 
-
-### Objective
-Generate *3 distinct search queries* that could help locate in the FACTors databast if this claim has been previously fact-checked.
-
-### Conversation History
-<Messages>
-{messages}
-</Messages>
+Linguistic Analyst specializing in intent detection.
 
 ### Context
-<Claim Information>
-- subject: {subject}
-- summary: {summary}
-</Claim Information>
+<Search Queries>
+{search_queries}
+</Search Queries>
 
-### Steps
-1. Identify the core *claim proposition* expressed in the summary (what is being asserted, not who said it).
-2. Extract the main *subject facets* that define the claim, such as:
-   - entities or actors involved,
-   - geographic scope,
-   - timeframe,
-   - key quantities, statistics, or outcomes.
-3. Generate paraphrased versions of the claim using different wording, synonyms, or sentence structures, while preserving the same underlying meaning.
-4. Create queries that emphasize different combinations of these facets (e.g., entity + statistic, event + location, outcome + timeframe).
-5. Ensure each query is distinct and phrased in a way that would help retrieve *semantically similar previously fact-checked claims* from the database, 
-rather than general background information.
+- User's Response: "{user_answer}"
 
-### Constraints
-- Do NOT invent facts or sources.
-- Do NOT include explanations or commentary.
-- Output exactly *3* search queries.
+### Task
+Determine if the user's latest response indicates approval to proceed with the current search queries or a request for modification.
 
-### Output Format
-Respond in *strict JSON*:
+### Decision Rules
+- **Set "confirmed": true** IF the user agrees, confirms accuracy, or provides a neutral command to proceed (e.g., "No continue" "Go," "Search," "Looks good").
+- **Set "confirmed": false** IF the user requests a change, correction, or provides new context to be included in the queries.
+
+### Instructions
+1. **If confirmed is true**: Return the "{search_queries}" exactly as provided.
+2. **If confirmed is false**: Modify or replace the queries based on the user's specific feedback in "{user_answer}". 
+3. Maintain exactly 3 queries in the final list.
+
+### Output (JSON)
 {{
-  "search_queries": [
-    "query 1",
-    "query 2",
-    "query 3",
+    "queries": [
+    {{
+      "query": "The concrete search string used",
+      "reasoning": "1-2 sentences on why this query was chosen."
+    }}
   ],
-  "confirmed": false,
+  "confirmed": boolean
 }}
 """
 
+# Prompt to structure the claim matching process
+structure_claim_prompt = """
+### Role
+Neutral Fact-Checking Analyst. Focus on objective synthesis of evidence and logical evaluation of claim alignment.
 
+### Context
+- Claim Summary: {summary}
+- Subject: {subject}
+- Retrieval Trace: {rag_trace}
+
+### Objective
+Organize the retrieval results into a structured evaluation. Identify the search queries used and map them to potentially relevant existing claims found in the trace.
+
+### Task Guidelines
+1. **Query Analysis**: Identify how the search queries targeted specific facets (subject, statistics, or timeframe) of the claim.
+2. **Claim Matching**: Extract up to 5 relevant claims from the `{rag_trace}`.
+3. **Alignment Rationale**: For each match, explicitly compare facets (entities, geography, quantities) to the user's claim.
+4. **Strict Evidence**: Use ONLY the information provided in the `{rag_trace}`. Do not invent claims.
+
+### Important Rules
+- **Tone**: Maintain a neutral, analytical, and pedagogical tone.
+
+### Output (JSON)
+Respond only with a JSON object in this format:
+{{
+  "top_claims": [
+    {{
+      "short_summary": "Description of the claim",
+      "allowed_url": "URL or null",
+      "alignment_rationale": "Comparison logic"
+    }}
+  ],
+  "explanation": "Summary of search results and why matches were or were not found."
+}}
+"""
 
 # Check if a matching claim has been found based on the user's answer
 match_check_prompt = """
 ### Role
-You are a neutral, guiding assistant that helps students through the fact-checking process step by step. Your main goal is not to provide answers, 
-but to support the student in developing their own reasoning and critical thinking. 
+Linguistic Analyst specializing in intent detection.
 
-### Objective
-Your task in this step is to determine whether the user believes a matching claim has been found.
+### Context
+<History>{messages}</History>
 
-Use ONLY the evidence already retrieved in this conversation (the CONTEXT and ALLOWED_URLS from prior tool calls). 
-Do NOT call any tools or retrieve new information.
-
-### Conversation History
-<Messages>
-{messages}
-</Messages>
-
-### User’s Latest Response
-<User Answer>
-{user_answer}
-</User Answer>
-
+- User's Latest Response: "{user_answer}"
 
 ### Task
-Analyze the user’s response and decide whether it indicates that a *matching claim* has been found.
+Determine if the user's response indicates they have found a satisfactory match among the previously presented claims or if they wish to continue the search.
 
-- If the user indicates that *no match* was found or wants to *continue researching* (e.g., “None,” “Keep searching,” “No match,” “Continue”), set `"match": false`.
-- If the user suggests that a claim *does match* their original statement (e.g., “Yes, that’s the one,” “That matches,” “Found it”), set `"match": true`.
-- If the message is ambiguous, infer the most likely intent from context.
+### Decision Rules
+- **Set "match": true** IF the user explicitly identifies a match (e.g., "Found it," "That's the one," "Yes, this claim matches").
+- **Set "match": false** IF the user indicates no match was found, expresses dissatisfaction with results, or gives a command to keep looking (e.g., "None of these," "Keep searching," "No," "Continue").
 
-Maintain a neutral and analytical tone.
+### Guidelines
+- **Ambiguity**: If the response is unclear, lean toward `false` to ensure the investigation is thorough rather than stopping prematurely.
+- **Evidence**: Base your decision strictly on the user's intent expressed in `{user_answer}` relative to the `{messages}` history.
 
-### Output Format
-Respond in *strict JSON*:
+### Output (JSON)
 {{
-  "match": true or false,
-  "explanation": "A concise, factual explanation of your reasoning"
+  "match": boolean,
+  "explanation": "Brief, analytical justification for the decision."
 }}
 """
 
-#retrieve the source from the user
-identify_source_prompt = """
+# Prompt to identify and locate the primary source of the claim
+source_prompt = """
 ### Role
-You are a neutral, guiding assistant that helps students through the fact-checking process step by step. Your main goal is not to provide answers, 
-but to support the student in developing their own reasoning and critical thinking. 
+Linguistic Analyst specializing in intent detection and source verification.
 
-### Objective
-Your task in this step is to identify who made the claim first.
+### Context
+- User's Response: "{user_answer}"
+- Previously Known Source: "{claim_source}"
+- Current Primary Source Status: "{primary_source}"
 
-### Conversation History
-<Messages>
-{messages}
-</Messages>
+### Task
+Extract the source identity and the location of the claim from the user's response.
 
-### User’s Latest Response
-<User Answer>
-{user_answer}
-</User Answer>
+### Extraction Rules
+1. **claim_source**: Update the person or organization if the user provide additional or corrected information. If not known, mention "unknown".
+2. **primary_source**: Update the status if the user provide additional or corrected information.
 
-### Claim source from state
-- Current claim source if known: {claim_source}
-
-### Steps
-1. *The claim source*, if this is not empty extract it from the user’s answer.
-2. *primary source*, if the user indicates that they provided the original/official source of the claim.
-If only the claim source is known, leave the *primary_source* False.
-
-Keep your tone objective and concise.
-
-### Output Format
-Respond in *strict JSON* matching the schema below:
+### Output (JSON)
 {{
-  "claim_source": "string — what is the source from whom this claim originated",
-  "primary_source": "boolean — true if the user provided the original/official source",
-}}
-"""
-
-# Create queries to search for the primary source
-source_location_prompt = """
-### Role
-You are a neutral, guiding assistant that helps students through the fact-checking process step by step. Your main goal is not to provide answers, 
-but to support the student in developing their own reasoning and critical thinking. 
-
-### Objective
-Your goal in this step is to retrieve a URL or description to where the claim was found. 
-
-### Conversation History
-<Messages>
-{messages}
-</Messages>
-
-### User’s Latest Response
-<User Answer>
-{user_answer}
-</User Answer>
-
-### Steps
-1. *Claim URL*: to the specific social media post, speech, or article where this claim was found.
-2. *Source description*: if there is no URL, find the best description of the source (e.g., "Twitter post by @username on DATE", "Interview on NEWS_CHANNEL", etc.)
-
-
-### Output Format
-Respond in *strict JSON*:
-{{
-  "claim_url": "string",
-  "source_description": "string",
+  "claim_source": A specific Person or Organisation or "unknown",
+  "primary_source": boolean,
 }}
 """
 
 # Generate 3 queries to find the primary source of the claim
 source_queries_prompt = """
 ### Role
-You are a neutral, guiding assistant that helps students through the fact-checking process step by step. Your main goal is not to provide answers, 
-but to support the student in developing their own reasoning and critical thinking. 
+Neutral Fact-Checking Analyst specializing in forensic source tracing.
 
 ### Objective
-Generate *3 distinct search queries* that could help locate the *original or primary source* of the claim
-(e.g., first statement, official announcement, original post, speech, or publication).
-
-### Conversation History
-<Messages>
-{messages}
-</Messages>
+Generate 3 distinct search queries designed to locate the primary or original source of the claim (e.g., the foundational statement, official document, or first instance of publication).
 
 ### Context
-<Claim Information>
-- claim: {claim}
-- claim_source: {claim_source}
-- claim_url: {claim_url}
-- claim_description: {claim_description}
-- summary: {summary}
-</Claim Information>
+<History>{messages}</History>
 
-### Steps
-1. Use the claim and context to infer what the *original source* might be.
-2. Rewrite key phrases using *synonyms or paraphrases* (avoid repeating the same wording).
-3. Vary query structure (e.g., question-based, keyword-based, attribution-based).
-4. Include the likely *speaker, author, organization, or platform*, if known.
-5. Ensure each query is meaningfully different and suitable for a search engine.
+- Original Claim: {claim}
+- Known Source: "{claim_source}"
+- Source Description: "{claim_description}"
+- Current Summary: "{summary}"
+
+### Query Generation Strategy
+1. **The Attribution Query**: Combine the core claim with the alleged author/organization to find the direct quote or official press release.
+2. **The Forensic Query**: Use specific identifiers (dates, unique keywords, or event names) to bypass secondary news reports and find the original platform (e.g., a specific social media thread or archive).
+3. **The Alternative Framing Query**: Use synonyms or broader categories for the event/statistic to find official database entries or earlier versions of the claim.
 
 ### Constraints
-- Do NOT invent facts or sources.
-- Do NOT include explanations or commentary.
-- Output exactly *3* search queries.
+- Do NOT invent sources or URLs.
+- Each query must be unique and prioritize primary documentation over news summaries.
+- Output exactly 3 queries with their respective logical reasoning.
 
-### Output Format
-Respond in *strict JSON*:
+### Output (JSON)
 {{
-  "search_queries": [
-    "query 1",
-    "query 2",
-    "query 3",
+    "queries": [
+    {{
+      "query": "The concrete search string used",
+      "reasoning": "1-2 sentences on why this query was chosen."
+    }}
   ],
-  "confirmed": false,
+  "confirmed": boolean
 }}
 """
 
-confirm_queries_prompt = """
+# Synthesize the search results to evaluate claim coverage
+eval_search_prompt = """
 ### Role
-You are a neutral, guiding assistant that helps students through the fact-checking process step by step.
-Your main goal is not to provide answers, but to support the student in developing their own reasoning and critical thinking.
+Neutral Fact-Checking Analyst. Your goal is to evaluate search evidence with objective rigor and identify logical gaps in the current evidence base.
 
 ### Objective
-Review the existing *search queries* and either confirm them or update them based on the user's latest response.
+Synthesize the provided search results to determine how much of the original claim is supported and what specific facets remain unverified.
 
-### Search Queries
-<Search Queries>
-{search_queries}
-</Search Queries>
+### Context
+<History>{messages}</History>
 
-### User’s Latest Response
-<User Answer>
-{user_answer}
-</User Answer>
+- Original Claim: {claim}
+- Known Source: "{claim_source}"
+- Source Description: "{claim_description}"
+- Current Summary: "{summary}"
 
-### Steps
-1. Start from the *existing search queries exactly as provided*.
-2. Determine whether the user is requesting a *modification* (e.g., change, update, replace, add, remove).
-3. If the user requests a change:
-   - Apply the change *only to the relevant query or phrase*.
-   - Keep all other queries unchanged.
-   - Set `confirmed = false`.
-4. If the user does NOT request a change:
-   - Return the queries unchanged.
-   - Set `confirmed = true`.
-5. Do not invent sources or facts not implied by the user’s response.
+### Search Evidence (Traces)
+{evaluation_text}
 
-### Output Format
-Respond in *strict JSON*:
+### Analytical Tasks
+1. **Facet Matching**: Cross-reference the "who, what, where, and when" of the claim against the snippets.
+2. **Evidence Synthesis**: Summarize the consensus or contradictions found in the search results.
+3. **Gap Analysis**: Explicitly list facets of the claim that are NOT covered (e.g., missing official data, lack of primary sources, or timeframe mismatches).
+
+### Strict Output Requirements (JSON)
+- **Format**: Respond ONLY with a valid JSON object following the `SearchSynthesis` schema.
+- **Stability Rule**: DO NOT use apostrophes ('), quotation marks ("), or curly braces ({{}}) inside text fields. Use plain, neutral descriptions only.
+- **Constraint**: If no evidence is found, set `coverage_score` to 1 and list all facets as missing.
+
 {{
-  "search_queries": [the original or modified list of search queries],
-  "confirmed": true or false
+  "overall_summary": "Neutral synthesis of found evidence. Avoid all special characters.",
+  "missing_info": ["Specific unverified detail 1", "Specific unverified detail 2"],
+  "coverage_score": (1-10 rating of evidence strength)
 }}
 """
 
 # Select the primary source
 select_primary_source_prompt = """
 ### Role
-You are a neutral, guiding assistant that helps students through the fact-checking process step by step. Your main goal is not to provide answers,
-but to support the student in developing their own reasoning and critical thinking.
+Linguistic Analyst specializing in intent detection.
 
-### Objective
-Decide whether the user’s latest response about the Tavily search results indicates:
-- a specific source is the *original / primary / official* source of the claim, OR
-- the user wants to continue searching, OR
-- the user provided new source information (name and/or URL).
+### Context
+<History>{messages}</History>
 
-### Conversation History
-<Messages>
-{messages}
-</Messages>
+- User's Response: "{user_answer}"
+- claim Source: "{claim_source}"
 
-### User’s Latest Response
-<User Answer>
-{user_answer}
-</User Answer>
+### Task
+Analyze the user's response to determine if they have identified a primary source from the search results or if they wish to keep looking.
 
-### Claim context
-- Previously known / user-given source: {claim_source}
-- Previously known URL: {claim_url}
+### Decision Rules
+1. **Identify Selection**: Detect if the user picks a specific result (e.g., "the first one," "number 3," "the BBC link," "that official report").
+   - If a selection is made: Update `claim_source` and `claim_url` with that specific information and set `primary_source` to **true**.
+2. **Handle Non-Selection**: If the user provides new information but does not confirm it as the "primary" source, or if they ask to continue:
+   - Keep `primary_source` as **false**.
+   - Only update `claim_source`.
+3. **Defaults**: If no choice is made and no new data is provided, retain the "Current State" values.
 
-### Steps
-1. Identify if the user selected a source from the presented results (e.g., “1”, “the first link”, “number 3”,“the eufactcheck one”, “the YouTube result”).
-2. If the user selected a specific source, set *claim_source* and *claim_url* to that source and URL, set `claim_url` to that URL, set "primary_source"=true.
-3. Else, don't change *claim_source*, *claim_url* and *primary_source*
-7. Do not invent URLs or sources. If a field is unknown, return an empty string for it.
+### Guidelines
+- **Precision**: Only set `primary_source: true` if the user expresses confidence that the source is the original or official origin.
+- **Integrity**: Do not invent URLs. Use empty strings "" if a value is not explicitly identified.
+- Maintain a neutral and analytical tone.
 
-### Output Format
-Respond in *strict JSON*:
+### Output (JSON)
 {{
-  "primary_source": true or false,
-  "claim_source": "string",
-  "claim_url": "string"
+  "primary_source": boolean,
+  "claim_source": A specific Person or Organisation or "unknown",
 }}
 """
 
 # Generate 3 search queries to find information to falsify or verify the claim
 search_queries_prompt = """
 ### Role
-You are a neutral, guiding assistant that helps students through the fact-checking process step by step. Your main goal is not to provide answers, 
-but to support the student in developing their own reasoning and critical thinking. 
+Neutral Fact-Checking Analyst specializing in verification strategy and forensic research.
 
 ### Objective
-Generate *3 distinct research queries* that could help to falsify or verify the claim
-
-### Conversation History
-<Messages>
-{messages}
-</Messages>
-
-### Conversation History
-<Alerts>
-{alerts}
-</Alerts> 
+Generate 3 distinct, high-leverage research queries designed to either verify or falsify the core factual assertions of the claim.
 
 ### Context
-<Claim Information>
-- claim: {claim}
-- claim_source: {claim_source}
-- claim_url: {claim_url}
-- claim_description: {claim_description}
-- summary: {summary}
-</Claim Information>
+<History>{messages}</History>
 
-### Steps
-1. Identify the **core factual assertion(s)** in the claim (e.g., numbers, events, actions, dates, or attribution).
-2. Generate queries that look for **independent or authoritative evidence**, such as:
-   - official statistics or reports,
-   - original statements or primary documents,
-   - credible third-party investigations or analyses.
-3. Use **paraphrased wording or synonyms** rather than copying the claim verbatim.
-4. Ensure the queries are suitable for a search engine and could reasonably **confirm or contradict** the claim.
-5. Make sure each query targets a **different angle** of verification (e.g., source credibility, factual accuracy, context).
+- Gaps in claim: {alerts}
+- Claim Summary: "{summary}"
+- Claim: {claim}
+- Source: "{claim_source}"
+
+### Research Strategy
+1. **The Statistical/Factual Check**: Target the specific numbers, dates, or events using authoritative databases (e.g., government reports, NGO data).
+2. **The Context/Nuance Check**: Search for the broader event or statement to see if the claim is taken out of context or missing critical qualifiers.
+3. **The Counter-Evidence Check**: Phrase queries neutrally or slightly toward the opposite of the claim to find potential rebuttals or corrections.
+
+### Guidelines
+- **Address Alerts**: Prioritize queries that fill the gaps identified in the "{alerts}" section.
+- **Avoid Echo Chambers**: Do not use the claim's exact wording; use objective, investigative language.
+- **Diversity of Angle**: Each query must target a different "facet" (e.g., one for the person involved, one for the statistic, one for the location).
 
 ### Constraints
-- Do NOT invent facts or sources.
-- Do NOT include explanations or commentary.
-- Output exactly *3* search queries.
+- Do NOT invent sources or URLs.
+- Output exactly 3 queries with their respective logical reasoning.
 
-### Output Format
-Respond in *strict JSON*:
+### Output (JSON)
 {{
-  "search_queries": [
-    "query 1",
-    "query 2",
-    "query 3",
+    "queries": [
+    {{
+      "query": "The concrete search string used",
+      "reasoning": "1-2 sentences on why this query was chosen."
+    }}
   ],
-  "confirmed": false,
+  "confirmed": boolean
 }}
 """
+
 # Ask the user if they want to search one more time
 iterate_search_prompt = """
 ### Role
-You are a neutral, guiding assistant that helps students through the fact-checking process step by step.
-Your main goal is not to provide answers, but to support the student in developing their own reasoning and critical thinking.
+Linguistic Analyst specializing in intent detection and conversational flow control.
+
+### Context
+<History>{messages}</History>
+
+- User's Latest Input: "{user_answer}"
 
 ### Objective
-Determine whether the user wants to **perform another search** or **stop searching and proceed**.
+Determine if the user's intent is to continue the investigation with more searching or to conclude the current research phase and proceed to the next step.
 
-### Conversation History
-<Messages>
-{messages}
-</Messages>
+### Intent Classification Rules
+1. **Set "confirmed": true** if the user indicates a desire to keep looking. 
+   - Keywords/Intent: "Yes," "Keep going," "Try another query," "Search again," "Maybe look for [topic]," "Not enough info yet."
+2. **Set "confirmed": false** if the user indicates they are finished, satisfied, or want to move on.
+   - Keywords/Intent: "No," "Stop," "Proceed," "Show results," "That's fine," "I'm done," "Next step."
+3. **Handle Ambiguity**:
+   - If the user provides a *new search query* or *additional facts* without saying yes/no, assume **"confirmed": true**.
+   - If the user is non-committal or asks "What else is there?", default to **"confirmed": true** to ensure research thoroughness.
 
-Below is the user’s latest reply:
-<User Answer>
-{user_answer}
-</User Answer>
+### Guidelines
+- Focus strictly on the *direction* of the workflow.
+- Do not evaluate the truth of the conversation; only evaluate the user's "go/stop" signal.
+- Base your decision on the semantic meaning of "{user_answer}" within the context of "{messages}".
 
-### Steps
-1. Analyze the user’s response for intent.
-2. If the user explicitly or implicitly indicates **yes**, **continue**, **search again**, **try another query**, or similar intent:
-   - Set `"confirmed": true`.
-3. If the user explicitly or implicitly indicates **no**, **stop**, **that’s enough**, **proceed**, **final**, or similar intent:
-   - Set `"confirmed": false`.
-4. If the response is unclear or non-committal, default to:
-   - `"confirmed": true
-
-
-### Output Format
-Respond in **strict JSON**:
+### Output (JSON)
 {{
-  "confirmed": true or false
+  "confirmed": boolean
 }}
 """
-

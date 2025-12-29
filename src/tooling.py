@@ -45,31 +45,58 @@ retriever = vectorstore.as_retriever()
 # ───────────────────────────────────────────────────────────────────────
 @tool
 def tavily_search(query: str, max_results: int = 10) -> TavilySearchOutput:
-    """Search the web with Tavily and return JSON-like results."""
+    """Search the web with Tavily and return structured results including the query."""
+    
     if not query.strip():
         return TavilySearchOutput(query=query, results=[], error="No query provided.")
 
-    resp = tavily_client.search(query=query, max_results=max_results, search_depth="advanced")
+    # Advanced search with AI-generated answer included
+    resp = tavily_client.search(
+        query=query, 
+        max_results=max_results, 
+        search_depth="advanced",
+        include_answer=True
+    )
+    
+    # Build structured output
     results = [
         SearchResult(
-            title=r.get("title"),
-            url=r.get("url"),
+            title=r.get("title", ""),
+            url=r.get("url", ""),
+            content=r.get("content", "")
         )
         for r in resp.get("results", [])
     ]
-    return TavilySearchOutput(query=query, results=results)
+    
+    return TavilySearchOutput(
+        query=query, 
+        results=results, 
+        answer=resp.get("answer")
+    )
 
 
 @tool
-def retriever_tool(query: str) -> str:
-    """Search the FACTors dataset and return context + allowed URLs."""
+def retriever_tool(query: str, subject: str = "") -> str:
+    """Search the FACTors dataset and return summarized context + allowed URLs."""
     docs = retriever.invoke(query)
+
+    # Fallback logic stays the same
+    if not docs and subject:
+        docs = retriever.invoke(subject)
+        
+    if not docs:
+        return "No relevant claims found in the database for this topic."
+
+    # This now only contains summaries (no heavy web-scraping)
     context_block = format_docs(docs)
+    
+    # Create the mapping for the 'allowed_url' field in your Pydantic model
     urls = [d.metadata.get("url", "") for d in docs if d.metadata.get("url")]
     allowed = dict(enumerate(urls))
+    
     return (
         "CONTEXT:\n" + context_block + "\n\n"
-        "ALLOWED_URLS:\n" + json.dumps(allowed, indent=2)
+        "ALLOWED_URLS:\n" + json.dumps(allowed)
     )
 
 tools = [retriever_tool, tavily_search]

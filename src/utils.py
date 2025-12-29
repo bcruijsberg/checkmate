@@ -25,29 +25,27 @@ max_chars = 1200
 # HELPER FUNCTION TO COMBINE SUMMARY AND FULL ARTICLE CONTENT, AND SEPERATE URLS
 # ───────────────────────────────────────────────────────────────────────────────
 def format_docs(docs) -> str:
-
-    """ Format the found documents to format """
-
+    """Format the found documents using only the local vector store summary."""
     formatted = []
-    for i, d in enumerate(docs, start=0):
+    
+    for i, d in enumerate(docs):
+        # Extract metadata from the document
+        title = d.metadata.get("title", "No Title")
         summary = (d.page_content or "").strip()
+        verdict = d.metadata.get("verdict", "N/A")
         url = d.metadata.get("url", "")
-        full_content, page_exsists = fetch_full_article(url)
-        
-        #rerturn content only if the page exsists 
-        if page_exsists:
-            if len(full_content) > max_chars:
-                full_content = full_content[:max_chars] + "…"
-            combined = f"""
-            [{i}] SUMMARY:
-            {summary}
 
-            [{i}] FULL ARTICLE CONTENT:
-            {full_content}
-            """
-            formatted.append(combined)
-        else:
-            formatted.append(f"this url: {url} does not exist, don't use it in your answer")
+        # Create a clean, concise block for the LLM
+        # We include the URL here so the LLM can map it to 'allowed_url'
+        combined = (
+            f"[{i}] SUMMARY:\n"
+            f"Title: {title}\n"
+            f"Content: {summary}\n"
+            f"Verdict: {verdict}\n"
+            f"Source URL: {url}"
+        )
+        formatted.append(combined)
+        
     return "\n\n---\n\n".join(formatted)
 
 # ────────────────────────────────────────────────────────────
