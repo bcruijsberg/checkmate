@@ -20,7 +20,7 @@ import streamlit as st
 
 st.set_page_config(page_title="Fact-check dataset editor", layout="wide")
 
-EDIT_COLS = ["checkable", "explanation", "question", "details_text", "alerts"]
+EDIT_COLS = ["checkable", "explanation", "question", "user_answer", "confirmed", "details_text", "alerts"]
 CHECKABLE_OPTIONS = ["POTENTIALLY CHECKABLE", "UNCHECKABLE"]
 
 
@@ -200,6 +200,8 @@ st.subheader("Editable fields")
 current_checkable = row.get("checkable", "")
 current_expl = row.get("explanation", "")
 current_q = row.get("question", "")
+current_user_answer = row.get("user_answer", "")
+current_confirmed = row.get("confirmed", False)
 current_details = row.get("details_text", "")
 current_alerts_raw = row.get("alerts", "[]")
 
@@ -216,6 +218,12 @@ with left:
     )
     explanation = st.text_area("explanation", value=str(current_expl or ""), height=140)
     question = st.text_area("question", value=str(current_q or ""), height=120)
+
+    user_answer_label = "user_answer ✅" if bool(current_confirmed) else "user_answer"
+    user_answer = st.text_area(user_answer_label, value=str(current_user_answer or ""), height=120)
+
+    confirmed = st.checkbox("confirmed", value=bool(current_confirmed))
+
 
 with right:
     details_text = st.text_area("details_text", value=str(current_details or ""), height=260)
@@ -245,6 +253,8 @@ if apply_now:
         "checkable": checkable,
         "explanation": explanation,
         "question": question,
+        "user_answer": user_answer,
+        "confirmed": confirmed,
         "details_text": details_text,
         "alerts": alerts_json,
     }

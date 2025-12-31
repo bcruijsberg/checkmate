@@ -46,13 +46,13 @@ Classify the claim and determine if it can be fact-checked.
 ### Instructions
 1. Analyze the claim, prioritizing any "Additional Context" provided.
 2. Categorize the claim and draft a brief justification.
-3. Formulate a polite question to confirm your assessment with the user, but don't offer assistance.
+3. Formulate a polite **question** to confirm your assessment with the user, and ALWAYS ADD "Or do you want to continue to the next step?".
 
 ### Output (JSON)
 {{
   "checkable": "POTENTIALLY CHECKABLE | UNCHECKABLE",
   "explanation": "Brief justification for the category chosen.",
-  "question": "Polite confirmation asking if the user agrees or has more to add."
+  "question": "Polite confirmation question asking if the user agrees, and wants to continue"
 }}
 """
 
@@ -106,7 +106,7 @@ Analyze the claim's logic based on all available evidence:
 
 ### Task 3: Guidance & Risk
 1. **Alerts**: Flag missing Geography, Time Period, unclear subject, qualitative claim, vague quantitative claim, geography missing, time period missing, methodological details absent. Do not flag if the info is present.
-2. **The Question**: Formulate exactly **one** polite, open-ended question to help the user refine the claim.
+2. **The Question**: Formulate a polite open **question** asking for additional information, and ALWAYS ADD "Or do you want to continue to the next step?".
 3. **details** : Include specific details (dates, numbers, names) from the evidence, to support your analysis from:
 {page_content}
 
@@ -118,10 +118,10 @@ Respond in the following structured JSON format:
   "source_description": description of the medium,
   "subject": "subject text" or "unclear",
   "quantitative": "quantitative" or "qualitative", and a short explanation,
-  "precision": "precise" or "vague" or "absolute (100%)" or "", specific numbers, dates, and names from the evidence.
+  "precision": "precise" or "vague" or "absolute (100%)" or "", specific numbers, dates, and names from the evidence,
   "based_on": "methodology" or "unclear", and a short explanation,
-  "question": "one open clarifying or confirmation question, don't ask for specific details, let the user figure this out",
-  "alerts": ["each alert as a short string; [] if none"]
+  "question": "Polite open question asking for addional information, or if the user wants to continue",
+  "alerts": ["each alert as a short string; [] if none"],
   "geography": "geographic scope" or "unclear",
   "time_period": "time frame relevant to the claim" or "unclear"
 }}
