@@ -153,7 +153,7 @@ https://eufactcheck.eu/factcheck/mostly-false-more-than-30-million-europeans-liv
 - geography: Europe
 - time_period: 2022.0
 ","['Missing claim source', 'Methodology details absent', 'Quantitative claim vague']",Could you provide the source or any data supporting the figure of over 30 million Europeans in energy poverty? Or do you want to continue to the next step?,"I don’t have the source handy, let’s move on. Next",True
-https://eufactcheck.eu/factcheck/uncheckable-only-three-people-died-in-the-construction-of-stadiums-for-the-fifa-world-cup-in-qatar/,„Only three people died in the construction of stadiums for the FIFA world cup in Qatar,UNCHECKABLE,,2022.0,UNCHECKABLE,"The exact number of construction-related deaths for Qatar's World Cup stadiums is not reliably documented, with conflicting reports and limited transparent data, making the claim impossible to verify definitively.","- claim_source: unknown
+https://eufactcheck.eu/factcheck/uncheckable-only-three-people-died-in-the-construction-of-stadiums-for-the-fifa-world-cup-in-qatar/,„Only three people died in the construction of stadiums for the FIFA world cup in Qatar,UNCHECKABLE,,2022.0,POTENTIALLY CHECKABLE,"The exact number of construction-related deaths for Qatar's World Cup stadiums is not reliably documented,  but it might be possible to verify that the number is more than 3.","- claim_source: unknown
 - primary_source: False
 - source_description: unknown
 - subject: deaths during construction of Qatar 2022 FIFA World Cup stadiums
@@ -162,7 +162,7 @@ https://eufactcheck.eu/factcheck/uncheckable-only-three-people-died-in-the-const
 - based_on: unclear - likely based on media reports, NGO investigations, or official statements, but no methodology provided
 - geography: Qatar
 - time_period: 2022.0
-","['missing claim source', 'methodology details absent']",Could you share where you first saw this claim or any sources you have that discuss the number of construction‑related deaths for the Qatar World Cup stadiums? Or do you want to continue to the next step?,I first came across the figure in a BBC News article from March 2022 that referenced a Human Rights Watch report on the Qatar World Cup construction fatalities.,False
+","[""missing claim source"", ""methodology details absent""]",Could you share where you first saw this claim or any sources you have that discuss the number of construction‑related deaths for the Qatar World Cup stadiums? Or do you want to continue to the next step?,I first came across the figure in a BBC News article from March 2022 that referenced a Human Rights Watch report on the Qatar World Cup construction fatalities.,False
 https://eufactcheck.eu/factcheck/false-500-000-people-participated-in-berlin-in-a-demonstration-against-the-russian-invasion/,500 000 people participated in Berlin in a demonstration against the Russian invasion,FALSE,,2022.0,POTENTIALLY CHECKABLE,"The statement asserts a specific number of participants in a past event, which is a factual claim that can be verified using police reports, media coverage, or organizer estimates.","- claim_source: unknown
 - primary_source: False
 - source_description: unknown
@@ -297,12 +297,12 @@ https://eufactcheck.eu/factcheck/mostly-true-e-vehicles-are-more-efficient-than-
 - primary_source: False
 - source_description: unknown
 - subject: Efficiency comparison between electric vehicles and combustion engine vehicles
-- quantitative: qualitative - the claim states a general superiority without providing specific metrics
+- quantitative: quantitative - the claim states a general superiority without providing specific metrics
 - precision: vague - no numerical values or percentages are given
 - based_on: unclear - no methodology or data source is cited
 - geography: unclear
 - time_period: 2022.0
-","['Missing Geography', 'Qualitative claim', 'Methodological details absent']","Could you provide more details about the source of this claim, such as who made it, where it was published, and any specific data or studies you are referencing? Or do you want to continue to the next step?","The claim was made by Dr. Jane Smith in a CDC report titled “Vaccination Trends 2023,” published on the CDC website in March 2023, and it cites the National Health Survey data from 2022.",False
+","[""Missing Geography"", ""Qualitative claim"", ""Methodological details absent""]","Could you provide more details about the source of this claim, such as who made it, where it was published, and any specific data or studies you are referencing? Or do you want to continue to the next step?","The claim was made by Dr. Jane Smith in a CDC report titled “Vaccination Trends 2023,” published on the CDC website in March 2023, and it cites the National Health Survey data from 2022.",False
 https://eufactcheck.eu/factcheck/mostly-false-windmills-are-considering-their-entire-life-cycle-not-sustainable/,"Windmills are, considering their entire life cycle, not sustainable",MOSTLY FALSE,,2022.0,POTENTIALLY CHECKABLE,"The claim makes a factual assertion about the overall sustainability of windmills across their entire life cycle, which can be evaluated using empirical data and lifecycle analyses rather than personal opinion or speculation.","- claim_source: unknown
 - primary_source: False
 - source_description: unknown
@@ -403,7 +403,7 @@ Paying in cash helps to avoid overspending while shopping. Carrying a certain am
 
 **About Euronet**
 
-Euronet Worldwide is a leading global provider of financial solutions and payment services. Founded in 1994, the company offers services to financial institutions, merchants, individual clients and others. Its portfolio includes construction and maintenance of ATMs, installation of POS terminals, card issuing services, software solutions, transfers for individual and business clients, etc. Euronet operates in more than 170 countries and has a team of over 7,100 employees in 66 offices worldwide. As a",2022.0,UNCHECKABLE,"The claim provides a specific percentage about cash usage in Bulgaria, but reliable, up-to-date data on transaction composition is not publicly available or standardized, making it impossible to verify the figure with confidence.","- claim_source: Novinite (online news site) citing Global Findex
+Euronet Worldwide is a leading global provider of financial solutions and payment services. Founded in 1994, the company offers services to financial institutions, merchants, individual clients and others. Its portfolio includes construction and maintenance of ATMs, installation of POS terminals, card issuing services, software solutions, transfers for individual and business clients, etc. Euronet operates in more than 170 countries and has a team of over 7,100 employees in 66 offices worldwide. As a",2022.0,POTENTIALLY CHECKABLE,"The claim provides a specific percentage about cash usage in Bulgaria, but reliable, up-to-date data on transaction composition is not publicly available or standardized, making it difficult to verify the figure with confidence.","- claim_source: Novinite (online news site) citing Global Findex
 - primary_source: False
 - source_description: Online news article
 - subject: Share of cash transactions in Bulgaria
@@ -790,12 +790,12 @@ In German schools, there are significantly more female teachers than male teache
 - primary_source: False
 - source_description: Online news article
 - subject: Teachers' salaries in Germany relative to the national average
-- quantitative: qualitative claim that teachers earn above the national average; also provides a quantitative range of €3,000‑€5,000 gross per month
+- quantitative: quantitative claim that teachers earn above the national average; also provides a  range of €3,000‑€5,000 gross per month
 - precision: vague – the statement “above the national average” lacks exact figures; the article cites a range of €3,000‑€5,000 per month gross
 - based_on: secondary data from the Gehalt.de salary portal and general statements in the DW article
 - geography: Germany
 - time_period: 2022
-","['qualitative claim', 'vague quantitative claim', 'methodological details absent']",Could you share any specific figures or sources that directly compare German teachers' salaries to the overall national average for 2022? Or do you want to continue to the next step?,"I don’t have the exact numbers on hand, so let’s keep going. Next",True
+","[""qualitative claim"", ""vague quantitative claim"", ""methodological details absent""]",Could you share any specific figures or sources that directly compare German teachers' salaries to the overall national average for 2022? Or do you want to continue to the next step?,"I don’t have the exact numbers on hand, so let’s keep going. Next",True
 https://eufactcheck.eu/factcheck/false-italians-stormed-a-mall-to-protest-green-passports/,Italians stormed a mall to protest green passports,FALSE,,2022.0,POTENTIALLY CHECKABLE,The statement describes a specific past event that can be verified through news reports or other records.,"- claim_source: unknown
 - primary_source: False
 - source_description: unknown
@@ -1285,7 +1285,7 @@ https://eufactcheck.eu/factcheck/mostly-false-we-wont-be-able-to-feed-our-famili
 - based_on: unclear - no methodology or evidence cited
 - geography: unclear
 - time_period: 2050
-","['missing geography', 'qualitative claim', 'vague quantitative claim', 'methodological details absent']","Could you share where you heard or read this claim, or any data or sources that were referenced? Or do you want to continue to the next step?",I read it in a Facebook post from a friend last month. Next.,False
+","[""missing geography"", ""qualitative claim"", ""vague quantitative claim"", ""methodological details absent""]","Could you share where you heard or read this claim, or any data or sources that were referenced? Or do you want to continue to the next step?",I read it in a Facebook post from a friend last month. Next.,True
 https://eufactcheck.eu/factcheck/true-number-of-asylum-applications-declined-notably-in-february/,Number of asylum applications declined notably in February,TRUE,,2024.0,POTENTIALLY CHECKABLE,"The claim asserts a specific factual change in asylum application numbers for a past month, which can be verified against official statistics.","- claim_source: unknown
 - primary_source: False
 - source_description: unknown
@@ -1426,7 +1426,7 @@ https://eufactcheck.eu/factcheck/false-there-is-a-direct-connection-between-covi
 - geography: unclear
 - time_period: unclear
 ","['missing Geography', 'missing Time Period', 'vague quantitative claim', 'methodological details absent']","Could you share where you encountered this claim, such as the author, organization, or a link, and any specific numbers, dates, or regions mentioned? Or do you want to continue to the next step?","I don’t have the exact source info, so let’s go ahead.",True
-https://eufactcheck.eu/factcheck/false-in-the-next-25-years-1-billion-african-immigrants-will-come-to-europe/,In the next 25 years 1 billion African immigrants will come to Europe,FALSE,,2024.0,POTENTIALLY CHECKABLE,"The statement asserts a specific numeric forecast about future migration, which can be compared to demographic projections and migration models, making it a factual claim that could be evaluated with available data.","- claim_source: unknown
+https://eufactcheck.eu/factcheck/false-in-the-next-25-years-1-billion-african-immigrants-will-come-to-europe/,In the next 25 years 1 billion African immigrants will come to Europe,FALSE,,2024.0,UNCHECKABLE,"The statement asserts a specific numeric forecast about future migration, which can be compared to demographic projections and migration models, making it a factual claim that could only be estimated with available data.","- claim_source: unknown
 - primary_source: False
 - source_description: unknown
 - subject: African immigration to Europe
@@ -1435,7 +1435,7 @@ https://eufactcheck.eu/factcheck/false-in-the-next-25-years-1-billion-african-im
 - based_on: unclear - no methodology or data source provided
 - geography: Europe (destination) and Africa (origin)
 - time_period: 2024‑2049 (next 25 years)
-","['missing source', 'methodology details absent', 'geography not fully specified (origin and destination)']",Could you share where you saw this claim or any supporting data you have? Or do you want to continue to the next step?,I saw it in a WHO 2022 report on air quality.,False
+","[""missing source"", ""methodology details absent"", ""geography not fully specified (origin and destination)""]",Could you share where you saw this claim or any supporting data you have? Or do you want to continue to the next step?,I saw it in a WHO 2022 report on air quality.,False
 https://eufactcheck.eu/factcheck/mostly-true-35-parties-will-take-part-in-the-european-parliament-elections-in-germany/,35 parties will take part in the European Parliament elections in Germany,MOSTLY TRUE,"The provided text is in Ukrainian. Here is the translation into clear, fluent English:
 
 * [Operation ""Midas""](https://lb.ua/tag/21157_operatsiya_midas)
@@ -2071,7 +2071,7 @@ https://eufactcheck.eu/factcheck/true-migratory-birds-are-threatened-by-climate-
 - geography: unclear
 - time_period: 2024.0
 ","['Missing Geography', 'Missing Time Period', 'Qualitative claim', 'Methodological details absent']","Could you provide more details about the source of this claim, such as who made it, where it was published, and any specific data or studies you are referring to? Or do you want to continue to the next step?",I don’t have the source details right now. Next,True
-https://eufactcheck.eu/factcheck/uncheckable-eu-spends-trillions-to-slow-climate-change-by-0-05-degrees/,EU spends trillions to slow climate change by 0.05 degrees,UNCHECKABLE,,2024.0,UNCHECKABLE,"The claim predicts a future temperature impact of EU spending, which cannot be verified with current data.","- claim_source: unknown
+https://eufactcheck.eu/factcheck/uncheckable-eu-spends-trillions-to-slow-climate-change-by-0-05-degrees/,EU spends trillions to slow climate change by 0.05 degrees,UNCHECKABLE,,2024.0,POTENTIALLY CHECKABLE,"The claim is potentially verifiable because it makes a specific, factual assertion about EU spending levels and a quantifiable temperature impact (0.05 degrees), both of which can be assessed using publicly available budget data and climate impact studies.","- claim_source: unknown
 - primary_source: False
 - source_description: unknown
 - subject: unclear
@@ -2080,7 +2080,7 @@ https://eufactcheck.eu/factcheck/uncheckable-eu-spends-trillions-to-slow-climate
 - based_on: unclear
 - geography: unclear
 - time_period: 2024.0
-","['missing geography', 'missing time period', 'unclear subject', 'vague quantitative claim', 'methodological details absent']","Could you provide more details about the source of the claim, such as where you saw it and any specific figures or reports it references? Or do you want to continue to the next step?",I saw the claim in a university environmental science blog post that referenced a 2023 EPA report saying about 45% of urban residents are exposed to unsafe air levels.,False
+","[""missing geography"", ""missing time period"", ""unclear subject"", ""vague quantitative claim"", ""methodological details absent""]","Could you provide more details about the source of the claim, such as where you saw it and any specific figures or reports it references? Or do you want to continue to the next step?",I saw the claim in a university environmental science blog post that referenced a 2023 EPA report saying about 45% of urban residents are exposed to unsafe air levels.,False
 https://eufactcheck.eu/factcheck/mostly-true-significant-increase-in-abortions-in-germany-since-2022/,Significant increase in abortions in Germany since 2022,MOSTLY TRUE,,2024.0,POTENTIALLY CHECKABLE,"The claim asserts a specific trend in abortion numbers in Germany since 2022, which is a factual statement about past events that can be verified using official statistics.","- claim_source: unknown
 - primary_source: False
 - source_description: unknown
@@ -2323,12 +2323,12 @@ https://eufactcheck.eu/factcheck/mostly-false-nuclear-energy-is-co%e2%82%82-neut
 - primary_source: False
 - source_description: unknown
 - subject: nuclear energy
-- quantitative: qualitative - the claim states that nuclear energy produces no CO₂ emissions
+- quantitative: quantitative - the claim states that nuclear energy produces no CO₂ emissions
 - precision: absolute - asserts 100% CO₂‑neutrality
 - based_on: unclear - no methodology or data cited
 - geography: unclear
 - time_period: 2025.0
-","['missing Geography', 'methodological details absent', 'qualitative claim']","Could you provide more information about where you heard or read this claim, such as the source, any supporting data, the region it refers to, and the time frame considered? Or do you want to continue to the next step?",I don’t have the source details right now. Next.,True
+","[""missing Geography"", ""methodological details absent"", ""qualitative claim""]","Could you provide more information about where you heard or read this claim, such as the source, any supporting data, the region it refers to, and the time frame considered? Or do you want to continue to the next step?",I don’t have the source details right now. Next.,True
 https://eufactcheck.eu/factcheck/mostly-false-we-need-to-work-more-and-more-efficiently-again/,We need to work more and more efficiently again,MOSTLY FALSE,,2025.0,POTENTIALLY CHECKABLE,"The statement makes a factual assertion about the need to increase work efficiency, which can be evaluated against data or expert analysis, making it suitable for fact‑checking.","- claim_source: unknown
 - primary_source: False
 - source_description: unknown
@@ -2538,7 +2538,7 @@ https://eufactcheck.eu/factcheck/false-romania-barring-calin-georgescu-from-runn
 - geography: Romania
 - time_period: 2025.0
 ","['qualitative claim', 'methodological details absent']",Could you share where you first saw this claim or any supporting details you have? Or do you want to continue to the next step?,I don't have any more info about where I saw it. Go ahead.,True
-https://eufactcheck.eu/factcheck/mostly-true-germany-will-be-climate-neutral-by-2045/,Germany will be climate-neutral by 2045,MOSTLY TRUE,,2025.0,POTENTIALLY CHECKABLE,"The statement asserts a specific policy target (Germany achieving climate neutrality by 2045), which can be verified against official government plans, legislation, and public commitments.","- claim_source: unknown
+https://eufactcheck.eu/factcheck/mostly-true-germany-will-be-climate-neutral-by-2045/,Germany will be climate-neutral by 2045,MOSTLY TRUE,,2025.0,UNCHECKABLE,"The statement asserts a specific policy target (Germany achieving climate neutrality by 2045), which can only be estimated against official government plans, legislation, and public commitments.","- claim_source: unknown
 - primary_source: False
 - source_description: unknown
 - subject: Germany's target to achieve climate neutrality
@@ -2547,8 +2547,8 @@ https://eufactcheck.eu/factcheck/mostly-true-germany-will-be-climate-neutral-by-
 - based_on: likely based on official government policy (e.g., German Climate Action Programme) but no specific document cited
 - geography: Germany
 - time_period: by 2045
-","['Missing claim source', 'Primary source not confirmed', 'Methodology not verified']","Could you provide the original source or document where this claim was made, such as a government statement, policy paper, or news article? Or do you want to continue to the next step?",I found the claim in a CDC press release from March 2023.,False
-https://eufactcheck.eu/factcheck/false-ms-weidel-does-not-represent-far-right-positions-but-rather-conservative-and-economically-liberal-ones/,Ms. Weidel does not represent far-right positions but rather conservative and economically liberal ones,FALSE,,2025.0,POTENTIALLY CHECKABLE,"The statement asserts a factual description of Ms. Weidel's political orientation, which can be verified by examining her public statements, party affiliation, and policy positions.","- claim_source: unknown
+","[""Missing claim source"", ""Primary source not confirmed"", ""Methodology not verified""]","Could you provide the original source or document where this claim was made, such as a government statement, policy paper, or news article? Or do you want to continue to the next step?",I found the claim in a CDC press release from March 2023.,False
+https://eufactcheck.eu/factcheck/false-ms-weidel-does-not-represent-far-right-positions-but-rather-conservative-and-economically-liberal-ones/,Ms. Weidel does not represent far-right positions but rather conservative and economically liberal ones,FALSE,,2025.0,UNCHECKABLE,"The statement asserts an opinion of Ms. Weidel's political orientation, which can't be verified .","- claim_source: unknown
 - primary_source: False
 - source_description: unknown
 - subject: Alice Weidel's political positioning
@@ -2557,8 +2557,8 @@ https://eufactcheck.eu/factcheck/false-ms-weidel-does-not-represent-far-right-po
 - based_on: unclear - likely opinion or media commentary without cited methodology
 - geography: Germany
 - time_period: 2025.0
-","['qualitative claim', 'methodological details absent']","Could you provide more information about where this claim originated, such as a specific article, interview, or statement, or any supporting evidence? Or do you want to continue to the next step?",I don’t have a specific article or interview to point to for that claim. Proceed.,True
-https://eufactcheck.eu/factcheck/mostly-true-germany-distributes-money-all-over-the-world-but-has-none-left-for-hardworking-farmers/,"Germany distributes money all over the world, but has none left for hardworking farmers",MOSTLY TRUE,,2025.0,POTENTIALLY CHECKABLE,"The statement makes a factual assertion about Germany's current financial allocations and the availability of funds for farmers, which can be verified using budget data and policy documents.","- claim_source: unknown
+","[""qualitative claim"", ""methodological details absent""]","Could you provide more information about where this claim originated, such as a specific article, interview, or statement, or any supporting evidence? Or do you want to continue to the next step?",I don’t have a specific article or interview to point to for that claim. Proceed.,True
+https://eufactcheck.eu/factcheck/mostly-true-germany-distributes-money-all-over-the-world-but-has-none-left-for-hardworking-farmers/,"Germany distributes money all over the world, but has none left for hardworking farmers",MOSTLY TRUE,,2025.0,UNCHECKABLE,The statement is more of an opinion about Germany's current financial allocations and the availability of funds for farmers.,"- claim_source: unknown
 - primary_source: False
 - source_description: unknown
 - subject: Germany's international financial aid versus domestic farmer support
@@ -2567,7 +2567,7 @@ https://eufactcheck.eu/factcheck/mostly-true-germany-distributes-money-all-over-
 - based_on: unclear - no methodology or data source is provided
 - geography: Germany (and worldwide)
 - time_period: 2025.0
-","['qualitative claim', 'methodological details absent', 'vague claim']","Could you share where you heard this claim or any supporting details, such as a source or data? Or do you want to continue to the next step?","I saw it mentioned in a group chat on WhatsApp, but I don’t have a link. Move on.",True
+","[""qualitative claim"", ""methodological details absent"", ""vague claim""]","Could you share where you heard this claim or any supporting details, such as a source or data? Or do you want to continue to the next step?","I saw it mentioned in a group chat on WhatsApp, but I don’t have a link. Move on.",True
 https://eufactcheck.eu/factcheck/mostly-true-we-are-now-attracting-more-investments-in-clean-hydrogen-than-the-us-and-china-combined/,We are now attracting more investments in clean hydrogen than the US and China combined,MOSTLY TRUE,,2025.0,POTENTIALLY CHECKABLE,"The statement asserts a factual comparison of current investment levels in clean hydrogen, which can be verified using investment data.","- claim_source: unknown
 - primary_source: False
 - source_description: unknown
@@ -2577,17 +2577,17 @@ https://eufactcheck.eu/factcheck/mostly-true-we-are-now-attracting-more-investme
 - based_on: unclear - methodology or data source not identified
 - geography: unclear
 - time_period: 2025.0
-","['missing geography', 'vague quantitative claim', 'methodological details absent']","Could you provide the source or any data supporting the claim about clean hydrogen investment levels, such as reports, figures, or the organization making the statement? Or do you want to continue to the next step?","I found the claim in the International Energy Agency’s 2023 Hydrogen Outlook, which reports that clean‑hydrogen investment hit about $XX billion in 2022, and the same figures are quoted by BloombergNEF.",False
+","[""missing geography"", ""vague quantitative claim"", ""methodological details absent""]","Could you provide the source or any data supporting the claim about clean hydrogen investment levels, such as reports, figures, or the organization making the statement? Or do you want to continue to the next step?","I found the claim in the International Energy Agency’s 2023 Hydrogen Outlook, which reports that clean‑hydrogen investment hit about $XX billion in 2022, and the same figures are quoted by BloombergNEF.",False
 https://eufactcheck.eu/factcheck/mostly-false-most-of-the-recipients-of-citizens-benefit-are-able-to-work/,Most of the recipients of citizen’s benefit are able to work,MOSTLY FALSE,,2025.0,POTENTIALLY CHECKABLE,"The claim asserts a factual condition about a specific group (citizen benefit recipients) and their current ability to work, which can be verified using employment and benefit data.","- claim_source: unknown
 - primary_source: False
 - source_description: unknown
 - subject: recipients of citizen's benefit
-- quantitative: quantitative - the claim states that 'most' (i.e., a majority) of benefit recipients are able to work
+- quantitative: qualitative - the claim states that 'most' (i.e., a majority) of benefit recipients are able to work
 - precision: vague - uses the term 'most' without specific percentage or numbers
 - based_on: unclear - no methodology or data source provided
 - geography: unclear
 - time_period: 2025.0
-","['missing geography', 'methodological details absent', 'vague quantitative claim']","Could you share where you saw this claim or any data supporting it, such as a report, survey, or official statistics? Or do you want to continue to the next step?",I don’t have a specific source for that claim. Go ahead.,True
+","[""missing geography"", ""methodological details absent"", ""vague quantitative claim""]","Could you share where you saw this claim or any data supporting it, such as a report, survey, or official statistics? Or do you want to continue to the next step?",I don’t have a specific source for that claim. Go ahead.,True
 https://eufactcheck.eu/factcheck/mostly-false-its-still-possible-to-reduce-emissions-so-that-we-can-meet-the-1-5-degree-target/,It’s still possible to reduce emissions so that we can meet the 1.5 degree target,MOSTLY FALSE,,,POTENTIALLY CHECKABLE,"The statement asserts a factual possibility about reducing emissions and achieving the 1.5°C target, which can be evaluated using existing emission data, mitigation scenarios, and climate model projections.","- claim_source: unknown
 - primary_source: False
 - source_description: unknown
@@ -2598,7 +2598,7 @@ https://eufactcheck.eu/factcheck/mostly-false-its-still-possible-to-reduce-emiss
 - geography: global
 - time_period: unclear
 ","['missing time period', 'qualitative claim', 'methodological details absent']","Could you share where you saw this claim or any supporting evidence, such as a report, article, or statement? Or do you want to continue to the next step?",I found the claim in a WHO 2022 report on air quality.,False
-https://eufactcheck.eu/factcheck/mostly-true-by-2035-there-will-be-no-job-that-is-unrelated-to-ai/,"By 2035, there will be no job that is unrelated to AI",MOSTLY TRUE,,2025.0,POTENTIALLY CHECKABLE,"The statement predicts a future condition about the nature of jobs and AI, which can be examined against current trends, expert forecasts, and empirical data, making it a factual claim that could potentially be verified.","- claim_source: unknown
+https://eufactcheck.eu/factcheck/mostly-true-by-2035-there-will-be-no-job-that-is-unrelated-to-ai/,"By 2035, there will be no job that is unrelated to AI",MOSTLY TRUE,,2025.0,UNCHECKABLE,"The statement predicts a future condition about the nature of jobs and AI, which can be examined against current trends, but can't  be verified.","- claim_source: unknown
 - primary_source: False
 - source_description: unknown
 - subject: future job market and AI integration
