@@ -17,3 +17,5 @@ lxml_html_clean==0.4.3
 tavily==1.1.0
 streamlit==1.51.0
 openpyxl==3.1.5
+bert-score==0.3.13
+hf_xet==1.2.0
