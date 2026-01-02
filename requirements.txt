@@ -2,6 +2,7 @@ python-dotenv==1.1.1
 langchain-groq==1.1.1
 langchain==1.2.0
 langchain_ollama==1.0.1
+langchain-openai==1.1.6
 langgraph==1.0.5
 tqdm==4.67.1
 langchain-community==0.4.1
