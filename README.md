@@ -1,3 +1,83 @@
-# CheckMate
+# CheckMate ♟️  
+*A Multi-Agent Fact-Checking Assistant for Journalism Education*
 
-The study focuses on developing and evaluating an AI assistant: **CheckMate**, that supports journalism students with fact-checking, while also serving as an educational tool to raise awareness about the responsible use of AI technologies, such as large language models (LLMs). The aim is to explore to what extent such an assistant can add value within education, both practically and didactically. 
+![Python](https://img.shields.io/badge/Python-3.10%2B-blue)
+![Streamlit](https://img.shields.io/badge/Streamlit-App-red)
+![LangGraph](https://img.shields.io/badge/LangGraph-Multi--Agent-purple)
+![FAISS](https://img.shields.io/badge/FAISS-Vector%20Store-green)
+![Status](https://img.shields.io/badge/Status-Prototype-orange)
+
+---
+
+## 🧭 Overview
+
+**CheckMate** is a **research prototype multi-agent assistant** designed to support **journalism students** in learning and practicing **fact-checking**.
+
+The system is grounded in the educational workflows developed by the **EUfactcheck project**  
+(https://eufactcheck.eu), which were explicitly designed for **journalism education**.
+
+Rather than merely automating fact-checking steps, CheckMate aims to:
+
+- Teach **structured and transparent fact-checking workflows**
+- Encourage **critical reasoning and reflection**
+
+To achieve this, the assistant generates **critical, Socratic-style questions** at key stages of the workflow.  
+These questions are intended to be discussed with peers in **oral or written reflective assignments**, encouraging students to reflect not only on *what* they conclude, but *why*.
+
+Technically, CheckMate is implemented using the **LangGraph framework** and integrates a **FAISS vector store** for retrieval-augmented reasoning over fact-checking datasets.
+
+---
+
+## 🎥 Demo Video
+
+A short demonstration of the CheckMate assistant is available on YouTube:
+
+[![CheckMate Demo Video](https://img.youtube.com/vi/FgR_dnYQu9s/0.jpg)](https://www.youtube.com/watch?v=FgR_dnYQu9s)
+
+<details>
+<summary>Optional embedded player (for Markdown renderers that support HTML)</summary>
+
+```html
+<iframe width="560" height="315"
+src="https://www.youtube.com/embed/FgR_dnYQu9s"
+title="CheckMate Demo"
+frameborder="0"
+allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+allowfullscreen>
+</iframe>
+</details>
+
+## 📁 Repository Structure
+
+```text
+.
+├── app.py                          # Main Streamlit interface and graph initialization
+├── src/                            # Core application code
+│   ├── State_scope.py              # AgentState and Pydantic data models
+│   ├── claim_nodes.py              # LangGraph node implementations
+│   ├── prompts.py                  # Prompt templates
+│   ├── tooling.py                  # LLMs, retrievers, Tavily tools, FAISS initialization
+│   └── utils.py                    # Helper functions
+│
+├── Data/                           # Datasets
+│   ├── FACTors.csv                 # FACTors dataset (fact-checked claims)
+│   └── content_bias_scores.csv     # Bias scores from the FACTors project
+│
+├── EUfactcheckData/                # EUfactcheck scraping and data
+│   ├── scrape_eufactcheck.py       # Scraping scripts
+│   └── data/                       # Scraped EUfactcheck articles and claims
+│
+├── Evaluation/                     # Evaluation and validation
+│   ├── app_validate.py             # Streamlit app for manual reference validation
+│   ├── app_compare.py              # Streamlit app for output comparison
+│   ├── validated_reference.ipynb   # Reference set creation pipeline
+│   ├── validated_reference_data.csv# Final validated reference dataset
+│   ├── llm_as_judge.ipynb           # LLM-as-judge evaluation
+│   └── measure_latency.ipynb       # Latency benchmarking
+│
+├── notebooks/                      # Research and analysis notebooks
+│   ├── Create-faiss.ipynb          # FAISS embedding creation
+│   └── Explore_data_bias.ipynb     # Bias data exploration
+│
+├── requirements.txt                # Python dependencies
+├── README.md                       # Project documentation
