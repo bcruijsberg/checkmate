@@ -2,10 +2,6 @@ import sys
 import os
 import streamlit as st
 
-# os.environ["LANGSMITH_TRACING"] = "true"
-# os.environ["LANGSMITH_ENDPOINT"] = "https://api.smith.langchain.com"
-# os.environ["LANGSMITH_PROJECT"] = "pr-left-technician-100"
-
 # location for src files
 sys.path.append(os.path.abspath("./src"))
 
@@ -45,9 +41,25 @@ from state_scope import AgentStateClaim
 from langgraph.types import Command
 from langchain_core.messages import HumanMessage, AIMessage
 from langgraph.checkpoint.memory import MemorySaver
+import asyncio
+import sys
 
+
+# This is necessary to prevent streamlit from restarting the even loop everytime
+# this caused errors with the critical thinking node, which is called multiple times
+def get_loop():
+    if "loop" not in st.session_state:
+        st.session_state.loop = asyncio.new_event_loop()
+    return st.session_state.loop
+
+def run(coro):
+    loop = get_loop()
+    return loop.run_until_complete(coro)
+
+# Initialize the streamlit page
 st.set_page_config(page_title="CheckMate", page_icon="✅")
 
+# css code to layout the sidebar
 st.markdown("""
 <style>
 /* Use percentage-based width */
@@ -174,7 +186,7 @@ def handle_graph_output(claim_out):
 # STREAMLIT UI
 # ───────────────────────────────────────────────────────────────────────
 
-st.title("🕵️ CheckMate – Claim checker")
+st.title("🕵️ CheckMate")
 
 claim_question = "What claim do you want to investigate?"
 
@@ -246,7 +258,7 @@ if main_prompt:
         # Check if the graph is waiting at an interrupt
         if snapshot.next:
             # RESUME
-            claim_out = asyncio.run(claim_flow.ainvoke(
+            claim_out = run(claim_flow.ainvoke(
                 Command(resume=main_prompt), 
                 config=st.session_state.graph_config
             ))
@@ -257,7 +269,7 @@ if main_prompt:
                 "messages": [HumanMessage(content=main_prompt)],
                 "claim": main_prompt
             }
-            claim_out = asyncio.run(claim_flow.ainvoke(
+            claim_out = run(claim_flow.ainvoke(
                 initial_state, 
                 config=st.session_state.graph_config
             ))

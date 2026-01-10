@@ -4,7 +4,6 @@
 from prompts import (
     checkable_check_prompt,
     confirmation_prompt,
-    extract_url_prompt,
     retrieve_info_prompt,
     get_summary_prompt,
     rag_queries_prompt,
@@ -23,25 +22,23 @@ from state_scope import (
     AgentStateClaim, 
     SubjectResult, 
     ConfirmationResult,
-    ExtractUrl,
     MoreInfoResult, 
     SummaryResult, 
     ConfirmationMatch,
     ClaimMatchingOutput,
     SourceExtraction,
-    SourceAnalysis,
     GetSearchQueries,
     SearchSynthesis,
     PrimarySourceSelection, 
 )
 from langgraph.types import Overwrite, interrupt
 from langchain_core.messages import HumanMessage,AIMessage, get_buffer_string
-from typing import List, Dict, Any, Literal
+from typing import Dict, Any, Literal
 from langgraph.graph import END
 from langgraph.graph.message import add_messages
 from langgraph.types import Command, Send
 from utils import get_new_user_reply,_domain
-from tooling import llm, llm_tuned, tools_dict, tavily_client 
+from tooling import llm, llm_tuned, tools_dict, tavily_client
 
 # Maximum number of messages to send to the prompt
 MAX_HISTORY_MESSAGES = 6
@@ -50,7 +47,7 @@ MAX_HISTORY_MESSAGES = 6
 # CRITICAL QUESTION NODE
 # ───────────────────────────────────────────────────────────────────────
 
-def critical_question(state: AgentStateClaim):
+async def critical_question(state: AgentStateClaim):
 
     """ Ask a socratic question to make the user think about the consequences of a fact checking a claim """
 
@@ -71,14 +68,24 @@ def critical_question(state: AgentStateClaim):
         summary=state.get("summary"),
         messages_critical=messages_critical_str 
     )
+    try:
+        #invoke the LLM and store the output
+        result = await llm_tuned.ainvoke([HumanMessage(content=prompt)])
+        content = result.content
+    except Exception as e:
+        # Graceful fallback question
+        content = (
+            "I’m having trouble formulating a good question right now. "
+            "Let’s pause and think: what part of this claim would be most important to verify first?"
+        )
 
-    #invoke the LLM and store the output
-    result = llm_tuned.invoke([HumanMessage(content=prompt)])
+        # Optional: log for debugging
+        print("critical_question error:", repr(e))
 
-    ai_chat_msg = AIMessage(content=result.content)
+    ai_chat_msg = AIMessage(content=content)
   
     return {
-        "critical_question": result.content,
+        "critical_question": content,
         "messages_critical": [ai_chat_msg],
     }
 
@@ -86,7 +93,7 @@ def critical_question(state: AgentStateClaim):
 # CHECKABLE_FACT NODE
 # ───────────────────────────────────────────────────────────────────────
 
-def checkable_fact(state: AgentStateClaim):
+async def checkable_fact(state: AgentStateClaim):
 
     """ Check if a claim is potentially checkable. """
 
@@ -107,34 +114,59 @@ def checkable_fact(state: AgentStateClaim):
         messages=messages_str,
     )
 
-    #invoke the LLM and store the output
-    result = structured_llm.invoke([HumanMessage(content=prompt)])
+    try:
+        #invoke the LLM and store the output
+        result = await structured_llm.ainvoke([HumanMessage(content=prompt)])
 
-    # checkable is a boolean in State
-    is_checkable = result.checkable == "POTENTIALLY CHECKABLE"
+        # checkable is a boolean in State
+        is_checkable = result.checkable == "POTENTIALLY CHECKABLE"
 
-    # human-readable assistant message for the chat
-    explanation_text = (
-        f"### Checkability analysis\n"
-        f"- Checkable: `{result.checkable}`\n"
-        f"- Reason: {result.explanation}\n"
-    )
+        # human-readable assistant message for the chat
+        explanation_text = (
+            f"### Checkability analysis\n"
+            f"- Checkable: `{result.checkable}`\n"
+            f"- Reason: {result.explanation}\n"
+        )
 
-    ai_chat_msg = AIMessage(content=explanation_text)
+        ai_chat_msg = AIMessage(content=explanation_text)
 
-    # Goto next node and update State
-    return {
-        "question": result.question,
-        "checkable": is_checkable,
-        "explanation": result.explanation,
-        "messages": [ai_chat_msg],
-    }
+        # Goto next node and update State
+        return {
+            "question": result.question,
+            "checkable": is_checkable,
+            "explanation": result.explanation,
+            "messages": [ai_chat_msg],
+        }
+    except Exception as e:
+        # fallback: ask a clarifying question
+        print("checkable_fact error:", repr(e))
+
+        fallback_question = (
+            "I hit a technical issue while analyzing checkability. "
+            "Quick question: what exactly should be verified (a number, a date, a quote, or an event)?"
+        )
+
+        ai_chat_msg = AIMessage(
+            content=(
+                "### Checkability analysis\n"
+                "- Checkable: `UNKNOWN`\n"
+                "- Reason: I couldn’t run the analysis due to a temporary error.\n\n"
+                f"{fallback_question}"
+            )
+        )
+
+        return {
+            "question": fallback_question,
+            "checkable": False,          # safest default
+            "explanation": "LLM error during checkability analysis.",
+            "messages": [ai_chat_msg],
+        }
 
 # ───────────────────────────────────────────────────────────────────────
 # CHECKABLE_CONFIRMATION NODE
 # ───────────────────────────────────────────────────────────────────────
 
-def checkable_confirmation(state: AgentStateClaim) -> Command[Literal["identify_url","__end__","checkable_fact"]]:
+async def checkable_confirmation(state: AgentStateClaim) -> Command[Literal["identify_url","__end__","checkable_fact"]]:
     
     """ Get confirmation from user on the gathered information. """
 
@@ -149,11 +181,32 @@ def checkable_confirmation(state: AgentStateClaim) -> Command[Literal["identify_
         user_answer=user_answer,
     )
 
-    #invoke the LLM and store the output
-    result = structured_llm.invoke([HumanMessage(content=prompt)])
+    try:
+        #invoke the LLM and store the output
+        result = await structured_llm.ainvoke([HumanMessage(content=prompt)])
+        confirmed = bool(result.confirmed)
     
+    except Exception as e:
+        # Fallback: assume NOT confirmed and loop back
+        print("checkable_confirmation error:", repr(e))
+        confirmed = False
+
+        # Message to the user
+        ai_chat_msg = AIMessage(
+            content="I had a technical hiccup reading that confirmation. Let’s try again."
+        )
+
+        # Goto next node and update State
+        return Command(
+            goto="checkable_fact",
+            update={
+                "messages": [ai_chat_msg],
+                "additional_context": user_answer,
+            },
+        )
+
     # human-readable assistant message for the chat
-    if result.confirmed:
+    if confirmed:
         confirm_text = "We'll continue with this claim."
     else:
         confirm_text = "Okay let's revise the claim or stop here."
@@ -161,7 +214,7 @@ def checkable_confirmation(state: AgentStateClaim) -> Command[Literal["identify_
     ai_chat_msg = AIMessage(content=confirm_text)
 
     # Goto next node and update State
-    if result.confirmed:
+    if confirmed:
         if state.get("checkable"):
             return Command(
                     goto="identify_url", 
@@ -191,25 +244,26 @@ def checkable_confirmation(state: AgentStateClaim) -> Command[Literal["identify_
 # ───────────────────────────────────────────────────────────────────────
 # GET URL NODE
 # ───────────────────────────────────────────────────────────────────────
-async def identify_url(state: AgentStateClaim):
+import re
+
+URL_RE = re.compile(r"(https?://[^\s)>\]]+|www\.[^\s)>\]]+)", re.IGNORECASE)
+
+def identify_url(state: AgentStateClaim):
     """Ask once, extract everything, and route the research path."""
     
     # Get an answer from the user
     user_answer = interrupt("Do you have a URL where you found this claim? ")
 
-    # Use structured output
-    structured_llm = llm.with_structured_output(ExtractUrl, method="json_mode")
-       
-    # Create a prompt
-    prompt= extract_url_prompt.format(
-        user_answer=user_answer,
-    )
+    m = URL_RE.search(user_answer or "")
+    if not m:
+        return {"claim_url": None}
 
-    # Invoke the LLM and store the output
-    result = await structured_llm.ainvoke(prompt)
+    url = m.group(0)
+    if url.lower().startswith("www."):
+        url = "https://" + url
 
     return {
-        "claim_url": result.claim_url,
+        "claim_url": url
     }
 
 # ───────────────────────────────────────────────────────────────────────
@@ -221,13 +275,15 @@ async def retrieve_information(state: AgentStateClaim):
 
     #retrieve the claim URL and scrape the content
     claim_url = state.get("claim_url", "")
-
+    page_content = "No valid URL provided to extract content."
+    
     if claim_url and claim_url.startswith("http"):
-        url = state.get("claim_url", "")  
-        extract_response = tavily_client .extract(urls=[url])
-        page_content = extract_response['results'][0].get('raw_content', "")
-    else:
-        page_content = "No valid URL provided to extract content."
+        try:
+            extract_response = tavily_client.extract(urls=[claim_url])
+            page_content = extract_response["results"][0].get("raw_content", "")
+        except Exception as e:
+            print("retrieve_information: tavily extract failed:", repr(e))
+            page_content = "Failed to extract content from the provided URL."
     
     #Retrieve conversation history
     conversation_history = list(state.get("messages", []))
@@ -247,8 +303,26 @@ async def retrieve_information(state: AgentStateClaim):
         messages=messages_str,
     )
 
-    # Invoke the LLM and store the output
-    result = await structured_llm.ainvoke(prompt)
+    try:
+        # Invoke the LLM and store the output
+        result = await structured_llm.ainvoke(prompt)
+
+    except Exception as e:
+        # fallback: minimal, safe state update
+        print("retrieve_information: LLM failed:", repr(e))
+
+        ai_chat_msg = AIMessage(
+            content=(
+                "I had trouble analyzing the source content due to a technical issue. "
+                "We can continue, but some details may be missing."
+            )
+        )
+
+        return {
+            "alerts": ["Source analysis failed"],
+            "messages": [ai_chat_msg],
+            "question": "Would you like to try once more or continue anyway?",
+        }
 
     # human-readable assistant message for the chat
     details_text = (
@@ -288,7 +362,7 @@ async def retrieve_information(state: AgentStateClaim):
 # CLARIFY_INFORMATION NODE
 # ───────────────────────────────────────────────────────────────────────
 
-def clarify_information(state: AgentStateClaim) -> Command[Literal["produce_summary", "retrieve_information"]]:
+async def clarify_information(state: AgentStateClaim) -> Command[Literal["produce_summary", "retrieve_information"]]:
 
     """ Get confirmation from user on the gathered information. """
 
@@ -303,11 +377,30 @@ def clarify_information(state: AgentStateClaim) -> Command[Literal["produce_summ
         user_answer=user_answer,
     )
 
-    #invoke the LLM and store the output
-    result = structured_llm.invoke([HumanMessage(content=prompt)])
+    try:
+        #invoke the LLM and store the output
+        result = await structured_llm.ainvoke([HumanMessage(content=prompt)])
+        confirmed = bool(result.confirmed)
+
+    except Exception as e:
+        # fallback: treat as NOT confirmed
+        print("clarify_information error:", repr(e))
+        confirmed = False
+
+        ai_chat_msg = AIMessage(
+            content="I had a technical hiccup processing that. Let’s add a bit more detail and try again."
+        )
+
+        return Command(
+            goto="retrieve_information",
+            update={
+                "messages": [ai_chat_msg],
+                "additional_context": user_answer,
+            },
+        )       
 
     # human-readable assistant message for the chat
-    if result.confirmed:
+    if confirmed:
         confirm_text = "Thanks, I’ll use this information to draft the summary."
     else:
         confirm_text = "Let’s collect a bit more information."
@@ -315,7 +408,7 @@ def clarify_information(state: AgentStateClaim) -> Command[Literal["produce_summ
     ai_chat_msg = AIMessage(content=confirm_text)
 
     # Goto next node and update State
-    if result.confirmed:
+    if confirmed:
         return Command(
                 goto="produce_summary", 
                 update={
@@ -337,19 +430,22 @@ def clarify_information(state: AgentStateClaim) -> Command[Literal["produce_summ
 # PRODUCE SUMMARY NODE
 # ───────────────────────────────────────────────────────────────────────
 
-def produce_summary(state: AgentStateClaim):
+async def produce_summary(state: AgentStateClaim):
 
     """ Get a summary on the gathered information. """
 
     #retrieve the claim URL and scrape the content
     claim_url = state.get("claim_url", "")
+    page_content = "No valid URL provided to extract content."
 
     if claim_url and claim_url.startswith("http"):
-        url = state.get("claim_url", "")  
-        extract_response = tavily_client .extract(urls=[url])
-        page_content = extract_response['results'][0].get('raw_content', "")
-    else:
-        page_content = "No valid URL provided to extract content."
+        try:
+            extract_response = tavily_client.extract(urls=[claim_url])
+            page_content = extract_response["results"][0].get("raw_content", "")
+        except Exception as e:
+            print("produce_summary: tavily extract failed:", repr(e))
+            page_content = "Failed to extract content from the provided URL."
+
 
     # retrieve alerts and format to string for the prompt
     alerts=state.get("alerts", [])
@@ -382,9 +478,28 @@ def produce_summary(state: AgentStateClaim):
         messages=messages_str,
     )
 
-    #invoke the LLM and store the output
-    result = structured_llm.invoke([HumanMessage(content=prompt)])
+    try:
+        #invoke the LLM and store the output
+        result = await structured_llm.ainvoke([HumanMessage(content=prompt)])
+    
+    except Exception as e:
+        # fallback: keep flow alive with a minimal summary
+        print("produce_summary: LLM failed:", repr(e))
 
+        fallback_text = (
+            "**Summary**\n\n"
+            "I hit a technical issue while drafting the summary. "
+            "To keep going, tell me: what is the *main point* of the claim in one sentence, "
+        )
+
+        return {
+            "summary": "",
+            "question": "What’s the main point of the claim, and what detail should we verify first?",
+            "messages": [AIMessage(content=fallback_text)],
+            "subject": state.get("subject", "") or "Unknown",
+            "alerts": (alerts or []) + ["Summary generation failed"],
+        }
+    
     # human-readable assistant message for the chat
     chat_lines = [
         f"**Subject:{result.subject}**\\n\n",
@@ -412,7 +527,7 @@ def produce_summary(state: AgentStateClaim):
 # GET_CONFIRMATION NODE
 # ───────────────────────────────────────────────────────────────────────
    
-def get_confirmation(state: AgentStateClaim) -> Command[Literal["produce_summary", "get_rag_queries"]]:
+async def get_confirmation(state: AgentStateClaim) -> Command[Literal["produce_summary", "get_rag_queries"]]:
 
     """ Get confirmation from user on the gathered information."""
 
@@ -427,11 +542,30 @@ def get_confirmation(state: AgentStateClaim) -> Command[Literal["produce_summary
         user_answer=user_answer,
     )
 
-    #invoke the LLM and store the output
-    result = structured_llm.invoke([HumanMessage(content=prompt)])
+    try:
+        #invoke the LLM and store the output
+        result = await structured_llm.ainvoke([HumanMessage(content=prompt)])
+        confirmed = bool(result.confirmed)
+    
+    except Exception as e:
+        # fallback: treat as NOT confirmed so user can revise summary
+        print("get_confirmation error:", repr(e))
+        confirmed = False
 
+        ai_chat_msg = AIMessage(
+            content="I had a technical hiccup reading that. Let’s revisit the summary and adjust it if needed."
+        )
+
+        return Command(
+            goto="produce_summary",
+            update={
+                "messages": [ai_chat_msg],
+                "additional_context": user_answer,
+            },
+        )
+    
     # human-readable assistant message for the chat
-    if result.confirmed:
+    if confirmed:
         confirm_text = "Let's check if this claim has already been researched"
     else:
         confirm_text = "Let's revisit the summary and adjust it if needed."
@@ -439,7 +573,7 @@ def get_confirmation(state: AgentStateClaim) -> Command[Literal["produce_summary
     ai_chat_msg = AIMessage(content=confirm_text)
 
     # Goto next node and update State
-    if result.confirmed:
+    if confirmed:
         return Command(
                 goto="get_rag_queries", 
                 update={
@@ -460,7 +594,7 @@ def get_confirmation(state: AgentStateClaim) -> Command[Literal["produce_summary
 # ───────────────────────────────────────────────────────────────────────
 # GENERATE QUERIES FOR CLAIM MATCHING NODE
 # ───────────────────────────────────────────────────────────────────────
-def get_rag_queries(state: AgentStateClaim):
+async def get_rag_queries(state: AgentStateClaim):
 
     """ Generate queries to locate the primary source of the claim. """
 
@@ -481,11 +615,28 @@ def get_rag_queries(state: AgentStateClaim):
         messages=messages_str,
     )
 
-    #invoke the LLM and store the output
-    result = structured_llm.invoke([HumanMessage(content=prompt)])
+    try:
+        #invoke the LLM and store the output
+        result = await structured_llm.ainvoke([HumanMessage(content=prompt)])
+        
+    except Exception as e:
+        # fallback: try once more
+        print("get_rag_queries failed:", repr(e))
 
-    # create a human-readable assistant message for the chat
+        ai_chat_msg = AIMessage(
+            content=(
+                "I ran into a technical issue while generating search queries. "
+                "Please try again in a moment."
+            )
+        )
+
+        return {
+            "search_queries": [],
+            "messages": [ai_chat_msg],
+            "question": state.get("question","Would you like to try again?"),
+        }
     
+    # create a human-readable assistant message for the chat
     queries_text = "\n".join(
         f"- **{q.query}**\n\n  *{q.reasoning}*" 
         for q in result.queries if q.query
@@ -505,13 +656,13 @@ def get_rag_queries(state: AgentStateClaim):
     return {
         "search_queries": query_strings,
         "messages":  [ai_chat_msg],
-        "question": "would you like to add or change something?"
+        "question": "would you like to add or change something? Or do you want to continue?"
     }  
 
 # ───────────────────────────────────────────────────────────────────────
 # CONFIRM CLAIM MATCHING QUERIES NODE
 # ───────────────────────────────────────────────────────────────────────
-def confirm_rag_queries(state: AgentStateClaim) -> dict:
+async def confirm_rag_queries(state: AgentStateClaim) -> dict:
     
     """Update state based on user confirmation. Routing is handled by a router."""
     
@@ -531,8 +682,22 @@ def confirm_rag_queries(state: AgentStateClaim) -> dict:
         user_answer=user_answer,
     )
 
-    #invoke the LLM and store the output
-    result = structured_llm.invoke([HumanMessage(content=prompt)])
+    try:
+        #invoke the LLM and store the output
+        result = await structured_llm.ainvoke([HumanMessage(content=prompt)])
+    
+    except Exception as e:
+        # fallback: treat as NOT confirmed
+        print("confirm_rag_queries error:", repr(e))
+
+        return {
+            "queries_confirmed": False,
+            "search_queries": search_queries, 
+            "question": state.get(
+                "question",
+                "Is the information correct?"
+            ),
+        }
     
     # Format display for the 'else' block (with reasoning)
     updated_display = "\n".join(
@@ -597,7 +762,39 @@ async def rag_retrieve_worker(state: AgentStateClaim) -> Dict[str, Any]:
 
     # Call the retriever tool
     retriever_tool = tools_dict["retriever_tool"] 
-    out = await retriever_tool.ainvoke({"query": q, "subject": subj})  
+    
+    try:
+        #invoke the LLM and store the output
+        out = await retriever_tool.ainvoke({"query": q, "subject": subj})  
+    
+    except Exception as first_error:
+        # fallback: try once more
+        print("rag_retrieve_worker first attempt failed:", repr(first_error))
+
+        try:
+            #invoke the LLM and store the output
+            out = await retriever_tool.ainvoke({"query": q, "subject": subj})
+
+        except Exception as second_error:
+            # fallback: just continue
+            print("rag_retrieve_worker second attempt failed:", repr(second_error))
+
+            return {
+                "rag_trace": [{
+                    "tool_name": "retriever_tool",
+                    "args": {"query": q, "subject": subj},
+                    "error": str(second_error),
+                }],
+                "messages": [
+                    AIMessage(
+                        content=(
+                            "I ran into a technical issue while retrieving information for this query. "
+                            "I tried again but it still failed, so I’ll skip it and continue."
+                        )
+                    )
+                ],
+            }
+    
     # Return the RAG trace entry
     return {
         "rag_trace": [{
@@ -611,7 +808,7 @@ async def rag_retrieve_worker(state: AgentStateClaim) -> Dict[str, Any]:
 # REDUCER CLAIM MATCHING NODE
 # ───────────────────────────────────────────────────────────────────────
 
-def reduce_claim_matching(state: AgentStateClaim) -> Command[Literal["match_or_continue", "primary_source"]]:
+async def reduce_claim_matching(state: AgentStateClaim) -> Command[Literal["match_or_continue", "primary_source"]]:
     """Combines RAG traces and turns them into structured output."""
 
     # Gather all RAG traces
@@ -632,12 +829,30 @@ def reduce_claim_matching(state: AgentStateClaim) -> Command[Literal["match_or_c
         rag_trace=formatted_trace, 
     )
 
-    # Invoke the LLM and store the output
-    result = structured_llm.invoke(prompt)
- 
+    try:
+        # Invoke the LLM and store the output
+        result = await structured_llm.ainvoke(prompt)
+    except Exception as e:
+        # fallback: continue if failed
+        print("reduce_claim_matching failed:", repr(e))
+
+        ai_chat_msg = AIMessage(
+            content=(
+                "I ran into a technical issue while matching this claim to existing research. "
+                "We’ll skip matching and move on to finding the primary source."
+            )
+        )
+
+        return Command(
+            goto="primary_source",
+            update={
+                "messages": [ai_chat_msg],
+                "queries_confirmed": False,
+            },
+        )
+    
     # human-readable assistant message for the chat
-    explanation_lines = ["### Claim Matching Analysis\n"]
-    explanation_lines.append(f"{result.explanation}\n") # The coaching explanation
+    explanation_lines = ["### Claim Matching Analysis\n", f"{result.explanation}\n"]
     
     if result.top_claims:
         explanation_lines.append("**Matched Claims:**")
@@ -666,12 +881,13 @@ def reduce_claim_matching(state: AgentStateClaim) -> Command[Literal["match_or_c
 # MATCHED OR CONTUE RESEARCH NODE
 # ───────────────────────────────────────────────────────────────────────
 
-def match_or_continue(state: AgentStateClaim) -> Command[Literal["primary_source", "__end__"]]:
+async def match_or_continue(state: AgentStateClaim) -> Command[Literal["primary_source", "__end__"]]:
 
     """ Decide whether to continue researching or end the process if a matching claim was found."""
 
     # Get an answer from the user
-    user_answer = interrupt("Do any of these match your claim? Or do you want to continue researching as suggested?")
+    question = "Do any of these match your claim? Or do you want to continue researching as suggested?"
+    user_answer = interrupt(question)
 
     # retrieve conversation history
     conversation_history = list(state.get("messages", []))
@@ -689,9 +905,27 @@ def match_or_continue(state: AgentStateClaim) -> Command[Literal["primary_source
         user_answer=user_answer,
     )
 
-    # Invoke the LLM and store the output
-    result = structured_llm.invoke([HumanMessage(content=prompt)])
+    try:
+        # Invoke the LLM and store the output
+        result = await structured_llm.ainvoke([HumanMessage(content=prompt)])
+    
+    except Exception as e:
+        # fallback: ask to answer once more
+        print("match_or_continue failed:", repr(e))
 
+        # Goto next node and update State
+        return Command(
+            goto="match_or_continue",
+            update={
+                "messages": [
+                    AIMessage(
+                        content="I ran into a technical issue interpreting that. Could you answer once more?"
+                    )
+                ],
+                "question": question,
+            },
+        )
+    
     # human-readable assistant message for the chat
     if result.match:
         ai_chat_msg = AIMessage(
@@ -753,8 +987,26 @@ async def primary_source(state: AgentStateClaim) -> Command[Literal["get_search_
         primary_source=primary_source
     )
 
-    # Invoke the LLM and store the output
-    result = await structured_llm.ainvoke(prompt)
+    try:
+        # Invoke the LLM and store the output
+        result = await structured_llm.ainvoke(prompt)
+
+    except Exception as e:
+        # fallback: ask to answer once more
+        print("primary_source failed:", repr(e))
+
+        # Don’t route. Re-ask.
+        return Command(
+            goto="primary_source",
+            update={
+                "messages": [
+                    AIMessage(
+                        content="I ran into a technical issue interpreting that. Could you answer once more?"
+                    )
+                ],
+                "question": ask_msg,
+            },
+        )
 
     # Determine Routing and Messaging
     if result.primary_source:
@@ -777,7 +1029,7 @@ async def primary_source(state: AgentStateClaim) -> Command[Literal["get_search_
 # ───────────────────────────────────────────────────────────────────────
 # GENERATE QUERIES TO LOCATE PRIMARY SOURCE NODE
 # ───────────────────────────────────────────────────────────────────────
-def get_source_queries(state: AgentStateClaim):
+async def get_source_queries(state: AgentStateClaim):
 
     """ Generate queries to locate the primary source of the claim. """
 
@@ -800,9 +1052,28 @@ def get_source_queries(state: AgentStateClaim):
         claim_description = state.get("claim_description", "")
     )
 
-    #invoke the LLM and store the output
-    result = structured_llm.invoke([HumanMessage(content=prompt)])
+    try:
+        #invoke the LLM and store the output
+        result = await structured_llm.ainvoke([HumanMessage(content=prompt)])
 
+    except Exception as e:
+        # fallback: try again
+        print("get_source_queries failed:", repr(e))
+
+        ai_chat_msg = AIMessage(
+            content=(
+                "I ran into a technical issue while generating source-search queries. "
+                "Please try again."
+            )
+        )
+
+        return {
+            "search_queries": [],
+            "messages": [ai_chat_msg],
+            "research_focus": "select_primary_source",
+            "question": "Please try again.",
+        }
+    
     # Format text for the user: include Reasoning for clarity
     queries_display = "\n".join(
         f"- **{q.query}**\n\n  *{q.reasoning}*" 
@@ -819,18 +1090,19 @@ def get_source_queries(state: AgentStateClaim):
         "search_queries": query_strings,
         "messages":  [AIMessage(content=chat_text)],
         "research_focus": "select_primary_source",
-        "question": "would you like to add or change something?"
+        "question": "would you like to add or change something? Or do you want to continue?"
     }
 
 # ───────────────────────────────────────────────────────────────────────
 # CONFIRM SEARCH QUERIES NODE
 # ───────────────────────────────────────────────────────────────────────
-def confirm_search_queries(state: AgentStateClaim) -> dict:
+async def confirm_search_queries(state: AgentStateClaim) -> dict:
     
     """Update state based on user confirmation. Routing is handled by a router."""
 
     # Get an answer from the user
-    user_answer = interrupt(state.get("question", "Is the information correct?"))
+    question = state.get("question", "Is the information correct?")
+    user_answer = interrupt(question)
     
     # retrieve search_queries and format to string for the prompt
     search_queries = state.get("search_queries", [])
@@ -845,8 +1117,23 @@ def confirm_search_queries(state: AgentStateClaim) -> dict:
         user_answer=user_answer,
     )
 
-    #invoke the LLM and store the output
-    result = structured_llm.invoke([HumanMessage(content=prompt)])
+    try:
+        #invoke the LLM and store the output
+        result = await structured_llm.ainvoke([HumanMessage(content=prompt)])
+
+    except Exception as e:
+        # fallback: treat as NOT confirmed
+        print("confirm_search_queries failed:", repr(e))
+
+        # 🔁 Do not confirm, do not change anything, re-ask
+        return {
+            "queries_confirmed": False,
+            "search_queries": search_queries,  # unchanged
+            "messages": [
+                AIMessage(content="I ran into a technical issue interpreting that. Could you answer once more?")
+            ],
+            "question": question,
+        }    
 
     # Format display for the user (re-generating reasoning in the process)
     updated_display = "\n".join(
@@ -869,7 +1156,7 @@ def confirm_search_queries(state: AgentStateClaim) -> dict:
         update["messages"] = [AIMessage(content=confirm_text)]
     else:
         update["question"] = (
-            "Is there anything else you would like to change about the search queries?\n"
+            "Is there anything else you would like to change about the search queries? Or do you want to continue?\n"
             f"{updated_display}"
         )
 
@@ -917,27 +1204,46 @@ async def find_sources_worker(state: AgentStateClaim) -> Dict[str, Any]:
     q = state["current_query"]
     tavily_tool = tools_dict.get("tavily_search")
 
-    # Call the Tavily tool
-    tool_output = await tavily_tool.ainvoke({"query": q, "max_results": 10})
-    out_dict = tool_output.model_dump() if hasattr(tool_output, "model_dump") else dict(tool_output)
+    try:
+        # Call the Tavily tool
+        tool_output = await tavily_tool.ainvoke({"query": q, "max_results": 10})
+        out_dict = tool_output.model_dump() if hasattr(tool_output, "model_dump") else dict(tool_output)
 
-    # Compact the results
-    compact_results = []
-    for r in (out_dict.get("results") or []):
-        r_data = r.model_dump() if hasattr(r, "model_dump") else dict(r)
-        compact_results.append({
-            "title": r_data.get("title"),
-            "url": r_data.get("url"),
-            "snippet": r_data.get("content", "")[:400]
-        })
+        # Compact the results
+        compact_results = []
+        for r in (out_dict.get("results") or []):
+            r_data = r.model_dump() if hasattr(r, "model_dump") else dict(r)
+            compact_results.append({
+                "title": r_data.get("title"),
+                "url": r_data.get("url"),
+                "snippet": r_data.get("content", "")[:400]
+            })
 
-    # Return raw data for later evaluation
-    return {
-        "tavily_context": [{
-            "query": q,
-            "results": compact_results[:9]
-        }]
-    }
+        # Return raw data for later evaluation
+        return {
+            "tavily_context": [{
+                "query": q,
+                "results": compact_results[:9]
+            }]
+        }
+
+    except Exception as e:
+        # fallback: just continue
+        print("find_sources_worker failed:", repr(e))
+
+        # No guessing: return empty results + record the error
+        return {
+            "tavily_context": [{
+                "query": q,
+                "results": [],
+                "error": str(e),
+            }],
+            "messages": [
+                AIMessage(
+                    content="I ran into a technical issue while searching for sources. We’ll skip this query and continue."
+                )
+            ],
+        }
 
 # ───────────────────────────────────────────────────────────────────────
 # FIND SOURCES REDUCER NODE
@@ -1009,19 +1315,32 @@ async def reduce_sources(state: AgentStateClaim) -> Command[Literal["select_prim
             evaluation_text = evaluation_text
         )
 
-        #invoke the LLM and store the output
-        result = structured_llm.invoke([HumanMessage(content=prompt)])
+        try:
+            #invoke the LLM and store the output
+            result = await structured_llm.ainvoke([HumanMessage(content=prompt)])
 
-        # human-readable assistant message
-        lines = ["### Search Synthesis", f"{result.overall_summary}",""]
+            # human-readable assistant message
+            lines = ["### Search Synthesis", f"{result.overall_summary}",""]
 
-        if result.missing_info:
-            lines.append("**Missing Information:**")
-            for gap in result.missing_info:
-                lines.append(f"- {gap}")
-            lines.append("")
+            if result.missing_info:
+                lines.append("**Missing Information:**")
+                for gap in result.missing_info:
+                    lines.append(f"- {gap}")
+                lines.append("")
 
-        lines.append("---")
+            lines.append("---")
+
+        except Exception as e:
+            # fallback: just continue
+            print("reduce_sources synthesis failed:", repr(e))
+
+            lines = [
+                "### Search Synthesis",
+                "I ran into a technical issue while synthesizing the search results. "
+                "Here are the sources I found so far:",
+                "",
+                "---",
+            ]
 
     # Build final message with detailed sources
     lines.append("### Detailed Sources")
@@ -1052,12 +1371,13 @@ async def reduce_sources(state: AgentStateClaim) -> Command[Literal["select_prim
 # SELECT PRIMARY SOURCE
 # ───────────────────────────────────────────────────────────────────────
 
-def select_primary_source(state: AgentStateClaim):
+async def select_primary_source(state: AgentStateClaim):
 
     """ pick the best / most likely primary source. """
 
     # Get an answer from the user
-    user_answer = interrupt("Does any of these sources correspond to the primary source of the claim?")
+    question = "Does any of these sources correspond to the primary source of the claim?"
+    user_answer = interrupt(question)
 
     # Get the context and conversation history
     conversation_history = list(state.get("messages", []))
@@ -1076,8 +1396,23 @@ def select_primary_source(state: AgentStateClaim):
         messages=messages_str,
     )
 
-    #invoke the LLM and store the output
-    result = structured_llm.invoke([HumanMessage(content=prompt)])
+    try:
+        #invoke the LLM and store the output
+        result = await structured_llm.ainvoke([HumanMessage(content=prompt)])
+
+    except Exception as e:
+        # fallback: askm once more
+        print("select_primary_source failed:", repr(e))
+
+        # no decision, no state changes
+        return {
+            "messages": [
+                AIMessage(
+                    content="I ran into a technical issue interpreting that. Could you answer once more?"
+                )
+            ],
+            "question": question,
+        }
 
     # retrieve existing alerts
     alerts = list(state.get("alerts", []))
@@ -1110,7 +1445,7 @@ def select_primary_source(state: AgentStateClaim):
 # ───────────────────────────────────────────────────────────────────────
 # GENERATE QUERIES TO FALSIFY OR VERIFY CLAIM NODE
 # ───────────────────────────────────────────────────────────────────────
-def get_search_queries(state: AgentStateClaim):
+async def get_search_queries(state: AgentStateClaim):
 
     """ Generate queries to locate the primary source of the claim. """
 
@@ -1138,8 +1473,27 @@ def get_search_queries(state: AgentStateClaim):
         claim_description = state.get("claim_description", "")
     )
 
-    #invoke the LLM and store the output
-    result = structured_llm.invoke([HumanMessage(content=prompt)])
+    try:
+        #invoke the LLM and store the output
+        result = await structured_llm.ainvoke([HumanMessage(content=prompt)])
+
+    except Exception as e:
+        # fallback: Continue
+        print("get_search_queries failed:", repr(e))
+
+        return {
+            "search_queries": [],  
+            "messages": [
+                AIMessage(
+                    content=(
+                        "I ran into a technical issue while generating search queries. "
+                        "Please try again."
+                    )
+                )
+            ],
+            "research_focus": "iterate_search",
+            "question": "Please try again.",
+        }
 
     #Format user-facing text (Query + Reasoning)
     queries_display = "\n".join(
@@ -1169,12 +1523,13 @@ def get_search_queries(state: AgentStateClaim):
 # ASK TO ITERATE SEARCH NODE
 # ───────────────────────────────────────────────────────────────────────
 
-def iterate_search(state: AgentStateClaim) -> Command[Literal["get_search_queries","__end__"]]:
+async def iterate_search(state: AgentStateClaim) -> Command[Literal["get_search_queries","__end__"]]:
 
     """ pick the best / most likely primary source. """
 
     # Get an answer from the user
-    user_answer = interrupt("Do you want to search once more?")
+    question = "Do you want to search once more?"
+    user_answer = interrupt(question)
 
     # Get the context and conversation history
     conversation_history = list(state.get("messages", []))
@@ -1192,9 +1547,27 @@ def iterate_search(state: AgentStateClaim) -> Command[Literal["get_search_querie
                 messages=messages_str,
     )
 
-    #invoke the LLM and store the output
-    result = structured_llm.invoke([HumanMessage(content=prompt)])
+    try:
+        #invoke the LLM and store the output
+        result = await structured_llm.ainvoke([HumanMessage(content=prompt)])
 
+    except Exception as e:
+        # fallback: treat as NOT confirmed
+        print("iterate_search failed:", repr(e))
+
+        # 🔁 no decision; re-ask
+        return Command(
+            goto="iterate_search",
+            update={
+                "messages": [
+                    AIMessage(
+                        content="I ran into a technical issue interpreting that. Could you answer once more?"
+                    )
+                ],
+                "question": question,
+            },
+        )
+    
     # retrieve existing alerts
     alerts = list(state.get("alerts", []))
 

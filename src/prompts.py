@@ -56,27 +56,6 @@ Classify the claim and determine if it can be fact-checked.
 }}
 """
 
-# Prompt to extract the claim URL from the user's response
-extract_url_prompt = """
-### Role
-Linguistic Analyst specializing in intent detection.
-
-### Task
-Extract the direct URL (link) to the claim from the user's latest response.
-
-### Context
-- User's Response: "{user_answer}"
-
-### Extraction Rules
-1. **claim_url**: Extract the full, valid URL. 
-2. **If no URL is found**: Return an empty string "".
-
-### Output (JSON)
-{{
-  "claim_url": "string"
-}}
-"""
-
 # Prompt to retrieve information from the claim's source
 retrieve_info_prompt = """
 ### Role
@@ -141,7 +120,7 @@ Determine if the User's Response provides a "Green Light" to proceed.
 ### Decision Rules
 **Set "confirmed": true IF:**
 - User explicitly agrees (e.g., "Yes," "Correct," "Exactly").
-- User provides a neutral command to proceed (e.g., "Continue," "Next").
+- User provides a neutral command somwhere in the answer to proceed (e.g., "Continue," "Next" "Proceed" "Move on").
 - User admits they have no more information (e.g., "I don't know," "That's all I have," "No more details").
 
 **Set "confirmed": false IF:**
@@ -181,15 +160,15 @@ Synthesize the current understanding of the claim into a concise report for the 
 1. **Summarize**: Create a brief overview of the claim, with as much specific detail as possible.
 2. **Subject Refinement**: Refine the "subject" field to be as specific as possible based on all available information.
 3. **Alerts**: List all relevant alerts based on the current extracted info.
-4. **Question**: Formulate one polite, open-ended question to ensure the user is satisfied with this framing.
+4. **Question**: Formulate one polite, open-ended question to ensure the user is satisfied with this framing, and ALWAYS ADD "Or do you want to continue to the next step?".
 5. **details** : Include specific details (dates, numbers, names) from the evidence, to support your analysis from:
 {page_content}
 
 ### Output (JSON)
 {{
-  "summary": "Concise summary of the claim, its characteristics, and discussion so far.",
-  "subject": refine the "subject text", keep it short,
-  "question": "one open clarifying or confirmation question, don't ask for specific details, let the user figure this out",
+  "summary": "Concise summary of the claim, its characteristics, and discussion so far."
+  "subject": refine the "subject text", keep it short
+  "question": "Polite open question asking for addional information, or if the user wants to continue"
   "alerts": ["each alert as a short string; [] if none"
 }}
 """
@@ -247,8 +226,14 @@ Linguistic Analyst specializing in intent detection.
 Determine if the user's latest response indicates approval to proceed with the current search queries or a request for modification.
 
 ### Decision Rules
-- **Set "confirmed": true** IF the user agrees, confirms accuracy, or provides a neutral command to proceed (e.g., "No continue" "Go," "Search," "Looks good").
-- **Set "confirmed": false** IF the user requests a change, correction, or provides new context to be included in the queries.
+**Set "confirmed": true IF:**
+- User explicitly agrees (e.g., "Fine" "continue" "Correct," "Ok").
+- User provides a neutral command somwhere in the answer to proceed (e.g., "Continue,"  "Next" "Proceed" "Move on").
+- User admits they have no more information (e.g., "I don't know," "That's all I have," "No more details").
+
+**Set "confirmed": false IF:**
+- User provides **new additional context or corrections** (even if they agree with the rest).
+- User expresses uncertainty or asks a new question.
 
 ### Instructions
 1. **If confirmed is true**: Return the "{search_queries}" exactly as provided.
@@ -444,13 +429,28 @@ Linguistic Analyst specializing in intent detection.
 Analyze the user's response to determine if they have identified a primary source from the search results or if they wish to keep looking.
 
 ### Decision Rules
-1. **Identify Selection**: Detect if the user picks a specific result (e.g., "the first one," "number 3," "the BBC link," "that official report").
-   - If a selection is made: Update `claim_source` and `claim_url` with that specific information and set `primary_source` to **true**.
-2. **Handle Non-Selection**: If the user provides new information but does not confirm it as the "primary" source, or if they ask to continue:
-   - Keep `primary_source` as **false**.
-   - Only update `claim_source`.
-3. **Defaults**: If no choice is made and no new data is provided, retain the "Current State" values.
+0. **Explicit Rejection (Highest Priority)**  
+   If the user explicitly says **no**, **none**, **not any**, **neither**, **I don’t see it**, **none of these**, or similar negative language:
+   - Set `primary_source` to **false**
+   - Do NOT select any source
+   - Do NOT invent or infer a source
+   - Keep `claim_source` unchanged unless the user provides a new one explicitly
 
+1. **Identify Selection**  
+   Detect if the user picks a specific result (e.g., "the first one," "number 3," "the BBC link," "that official report").
+   - If a selection is made:
+     - Update `claim_source` and `claim_url` with that specific information
+     - Set `primary_source` to **true**
+
+2. **Handle Non-Selection / New Info**  
+   If the user provides new information but does NOT confirm it as the primary source, or if they ask to continue searching:
+   - Set `primary_source` to **false**
+   - Update `claim_source` only if new source information is provided
+
+3. **Defaults (No Clear Signal)**  
+   If no choice is made and no new data is provided:
+   - Retain all values from the current state
+   
 ### Guidelines
 - **Precision**: Only set `primary_source: true` if the user expresses confidence that the source is the original or official origin.
 - **Integrity**: Do not invent URLs. Use empty strings "" if a value is not explicitly identified.

@@ -48,9 +48,6 @@ class SubjectResult(BaseModel):
     explanation: str = Field("", description="Explanation for the classification")
     question: str = Field("", description="Question to user for confirmation")
 
-class ExtractUrl(BaseModel):
-    claim_url: str = Field("", description="The URL of the claim if it exists")
-
 class MoreInfoResult(BaseModel):
     subject: str = Field("", description="The subject of the claim")
     quantitative: str = Field("", description="Is the claim quantitative?")
@@ -109,20 +106,6 @@ class SourceExtraction2(BaseModel):
     quantitative: str = Field("", description="Is the claim quantitative?")
     precision: str = Field("", description="How precise is it?")
     based_on: str = Field("", description="how was the data collected or derived?")
-
-class SourceAnalysis(BaseModel):
-    claim_source: str = Field(description="The entity who made the claim.")
-    primary_source: bool = Field(description="True if this is the original/foundational source.")
-    source_description: str = Field(description="Contextual description of where it was found.")
-    summary: str = Field(default="", description="Updated summary of the factual claim being investigated.")
-    alerts: List[str] = Field(default_factory=list, description="A list of specific red flags or missing pieces of information.")
-
-class SourceAnalysis(BaseModel):
-    claim_source: str = Field(description="The entity who made the claim.")
-    primary_source: bool = Field(description="True if this is the original/foundational source.")
-    source_description: str = Field(description="Contextual description of where it was found.")
-    summary: str = Field(default="", description="Updated summary of the factual claim being investigated.")
-    alerts: List[str] = Field(default_factory=list, description="A list of specific red flags or missing pieces of information.")
 
 # Structured output model for search nodes (primary source and final research)
 class SearchResult(BaseModel):

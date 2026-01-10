@@ -6,7 +6,7 @@ st.set_page_config(layout="wide", page_title="Model Output Comparison")
 
 @st.cache_data
 def load_data():
-    df = pd.read_csv("eval_gptoss_output.csv")
+    df = pd.read_csv("metrics_output-ollama.csv") # or metrics_output-groq
     return df
 
 def main():
