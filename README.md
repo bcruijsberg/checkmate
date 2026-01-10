@@ -30,22 +30,10 @@ Technically, CheckMate is implemented using the **LangGraph framework** and inte
 
 ## 🎥 Demo Video
 
-A short demonstration of the CheckMate assistant is available on YouTube:
+Watch the demo on YouTube: https://www.youtube.com/watch?v=FgR_dnYQu9s
 
-[![CheckMate Demo Video](https://img.youtube.com/vi/FgR_dnYQu9s/0.jpg)](https://www.youtube.com/watch?v=FgR_dnYQu9s)
+[![CheckMate demo video thumbnail](https://img.youtube.com/vi/FgR_dnYQu9s/hqdefault.jpg)](https://www.youtube.com/watch?v=FgR_dnYQu9s)
 
-<details>
-<summary>Optional embedded player (for Markdown renderers that support HTML)</summary>
-
-```html
-<iframe width="560" height="315"
-src="https://www.youtube.com/embed/FgR_dnYQu9s"
-title="CheckMate Demo"
-frameborder="0"
-allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-allowfullscreen>
-</iframe>
-</details>
 
 ## 📁 Repository Structure
 
