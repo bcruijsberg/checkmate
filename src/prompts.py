@@ -72,37 +72,40 @@ Neutral Fact-Checking Analyst. Focus on objective evaluation and guiding the use
 ### Task 1: Source & Intent Extraction
 1. **claim_source**: Identify the person or organization who originated the claim.
 2. **primary_source**: Set to true ONLY if the evidence confirms this is the original/foundational origin.
-3. **source_description**: Describe the medium (e.g., "Official PDF", "Social Media Post").
 
-### Task 2: Factual Dimension Analysis
-Analyze the claim's logic based on all available evidence:
+### Task 2: Build details_claim (Factual Dimension Analysis)
+Populate **details_claim** using ONLY what is supported by the evidence (claim origin + history + additional context).
+- **subject**: Identify the core entity or event.
 1. **Subject**: Identify the core entity or event.
-2. **Quantitative/Qualitative**: Explain if it is measurable data or a description.
+2. **data_type**: "quantitative" or "qualitative" (choose one). Provide a brief explanation.
 3. **Precision**: Categorize as Precise, Vague, or Absolute (100%), and provide specific numbers, or names from the evidence.
 4. **Based On**: Identify the likely methodology (e.g., Official stats, Survey, research). Provide a brief explanation.
 5. **Geography**: Identify the geographic scope of the claim.
 6. **Time Period**: Identify the time frame relevant to the claim.
+7. **source_description**: Describe the medium (e.g., "Official PDF", "Social Media Post").
 
 ### Task 3: Guidance & Risk
 1. **Alerts**: Flag missing Geography, Time Period, unclear subject, qualitative claim, vague quantitative claim, geography missing, time period missing, methodological details absent. Do not flag if the info is present.
 2. **The Question**: Formulate a polite open **question** asking for additional information, and ALWAYS ADD "Or do you want to continue to the next step?".
-3. **details** : Include specific details (dates, numbers, names) from the evidence, to support your analysis from:
+3. Include specifics like dates, numbers, names from the evidence, to support your analysis from:
 {page_content}
 
 ### Output Format
 Respond in the following structured JSON format:
 {{
-  "claim_source": A specific Person or Organisation or "unknown",
-  "primary_source": boolean,
-  "source_description": description of the medium,
-  "subject": "subject text" or "unclear",
-  "quantitative": "quantitative" or "qualitative", and a short explanation,
-  "precision": "precise" or "vague" or "absolute (100%)" or "", specific numbers, dates, and names from the evidence,
-  "based_on": "methodology" or "unclear", and a short explanation,
-  "question": "Polite open question asking for addional information, or if the user wants to continue",
-  "alerts": ["each alert as a short string; [] if none"],
-  "geography": "geographic scope" or "unclear",
-  "time_period": "time frame relevant to the claim" or "unclear"
+  "claim_source": "A specific Person or Organisation or \\"unknown\\"",
+  "primary_source": true/false,
+  "details_claim": {{
+    "source_description": "description of the medium",
+    "subject": "subject text" or "unclear",
+    "data_type": "quantitative" or "qualitative",
+    "precision": "precise" or "vague" or "absolute (100%)" or "",
+    "based_on": "methodology" or "unclear",
+    "geography": "geographic scope" or "unclear",
+    "time_period": "time frame relevant to the claim" or "unclear"
+  }},
+  "question": "Polite open question... Or do you want to continue to the next step?",
+  "alerts": ["each alert as a short string; [] if none"]
 }}
 """
 
@@ -158,16 +161,14 @@ Synthesize the current understanding of the claim into a concise report for the 
 
 ### Instructions
 1. **Summarize**: Create a brief overview of the claim, with as much specific detail as possible.
-2. **Subject Refinement**: Refine the "subject" field to be as specific as possible based on all available information.
-3. **Alerts**: List all relevant alerts based on the current extracted info.
-4. **Question**: Formulate one polite, open-ended question to ensure the user is satisfied with this framing, and ALWAYS ADD "Or do you want to continue to the next step?".
-5. **details** : Include specific details (dates, numbers, names) from the evidence, to support your analysis from:
+2. **Alerts**: List all relevant alerts based on the current extracted info.
+3. **Question**: Formulate one polite, open-ended question to ensure the user is satisfied with this framing, and ALWAYS ADD "Or do you want to continue to the next step?".
+4. **details** : Include specific details (dates, numbers, names) from the evidence, to support your analysis from:
 {page_content}
 
 ### Output (JSON)
 {{
   "summary": "Concise summary of the claim, its characteristics, and discussion so far."
-  "subject": refine the "subject text", keep it short
   "question": "Polite open question asking for addional information, or if the user wants to continue"
   "alerts": ["each alert as a short string; [] if none"
 }}
@@ -185,7 +186,6 @@ Generate 3 distinct search queries to locate semantically similar previously fac
 <History>{messages}</History>
 
 - Current Summary: "{summary}"
-- Subject: {subject}
 
 ### Query Generation Logic
 To maximize retrieval recall, generate three queries with different structural focuses:
@@ -259,7 +259,6 @@ Neutral Fact-Checking Analyst. Focus on objective synthesis of evidence and logi
 
 ### Context
 - Claim Summary: {summary}
-- Subject: {subject}
 - Retrieval Trace: {rag_trace}
 
 ### Objective

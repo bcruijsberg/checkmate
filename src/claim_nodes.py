@@ -20,16 +20,15 @@ from prompts import (
 )
 from state_scope import (
     AgentStateClaim, 
-    SubjectResult, 
-    ConfirmationResult,
-    MoreInfoResult, 
-    SummaryResult, 
+    CheckableOutput, 
+    ConfirmationOutput,
+    MoreInfoOutput, 
+    SummaryOutput, 
     ConfirmationMatch,
     ClaimMatchingOutput,
-    SourceExtraction,
+    SourceOutput,
     GetSearchQueries,
     SearchSynthesis,
-    PrimarySourceSelection, 
 )
 from langgraph.types import Overwrite, interrupt
 from langchain_core.messages import HumanMessage,AIMessage, get_buffer_string
@@ -105,7 +104,7 @@ async def checkable_fact(state: AgentStateClaim):
     messages_str = get_buffer_string(recent_messages)
 
     # Use structured output
-    structured_llm = llm.with_structured_output(SubjectResult, method="json_mode")
+    structured_llm = llm.with_structured_output(CheckableOutput, method="json_mode")
 
     # Create a prompt
     prompt = checkable_check_prompt.format(
@@ -174,7 +173,7 @@ async def checkable_confirmation(state: AgentStateClaim) -> Command[Literal["ide
     user_answer = interrupt(state.get("question", "Is the information correct?"))
 
     # Use structured output
-    structured_llm = llm.with_structured_output(ConfirmationResult, method="json_mode")
+    structured_llm = llm.with_structured_output(ConfirmationOutput, method="json_mode")
 
     # Create a prompt
     prompt = confirmation_prompt.format(
@@ -293,7 +292,7 @@ async def retrieve_information(state: AgentStateClaim):
     messages_str = get_buffer_string(recent_messages)
 
     # Use structured output
-    structured_llm = llm.with_structured_output(MoreInfoResult, method="json_mode")
+    structured_llm = llm.with_structured_output(MoreInfoOutput, method="json_mode")
 
     # Create a prompt
     prompt = retrieve_info_prompt.format(
@@ -327,14 +326,14 @@ async def retrieve_information(state: AgentStateClaim):
     # human-readable assistant message for the chat
     details_text = (
         "**Here’s what I extracted from your claim:**\n"
-        f"- claim_source: {result.claim_source or 'not clearly specified'}\n"
-        f"- source_description: {result.source_description or 'not clearly specified'}\n"
-        f"- Subject: {result.subject or 'not clearly specified'}\n"
-        f"- Quantitative: {result.quantitative}\n"
-        f"- Precision: {result.precision}\n"
-        f"- Based on: {result.based_on}\n"
-        f"- Geography: {result.geography or 'not clearly specified'}\n"
-        f"- Time Period: {result.time_period or 'not clearly specified'}\n"
+        f"- Claim source: {result.claim_source or 'not clearly specified'}\n"
+        f"- Source description: {result.details_claim.source_description or 'not clearly specified'}\n"
+        f"- Subject: {result.details_claim.subject or 'not clearly specified'}\n"
+        f"- Data type: {result.details_claim.data_type}\n"
+        f"- Precision: {result.details_claim.precision}\n"
+        f"- Based on: {result.details_claim.based_on}\n"
+        f"- Geography: {result.details_claim.geography or 'not clearly specified'}\n"
+        f"- Time Period: {result.details_claim.time_period or 'not clearly specified'}\n"
     )
 
     if result.alerts:
@@ -346,16 +345,10 @@ async def retrieve_information(state: AgentStateClaim):
     return {
             "claim_source": result.claim_source,
             "primary_source": result.primary_source,
-            "source_description": result.source_description,
             "alerts": result.alerts or [],
             "messages": [ai_chat_msg],
-            "subject": result.subject,
-            "quantitative": result.quantitative,
-            "precision": result.precision,
-            "based_on": result.based_on,
             "question": result.question,
-            "geography": result.geography,
-            "time_period": result.time_period,
+            "details_claim": result.details_claim,
     }
 
 # ───────────────────────────────────────────────────────────────────────
@@ -370,7 +363,7 @@ async def clarify_information(state: AgentStateClaim) -> Command[Literal["produc
     user_answer = interrupt(state.get("question", "Is the information correct?"))
 
     # Use structured output
-    structured_llm = llm.with_structured_output(ConfirmationResult, method="json_mode")
+    structured_llm = llm.with_structured_output(ConfirmationOutput, method="json_mode")
 
     # Create a prompt
     prompt  =  confirmation_prompt.format(
@@ -446,6 +439,8 @@ async def produce_summary(state: AgentStateClaim):
             print("produce_summary: tavily extract failed:", repr(e))
             page_content = "Failed to extract content from the provided URL."
 
+    # retrieve all details
+    details = state.get("details_claim")
 
     # retrieve alerts and format to string for the prompt
     alerts=state.get("alerts", [])
@@ -459,21 +454,21 @@ async def produce_summary(state: AgentStateClaim):
     messages_str = get_buffer_string(recent_messages)
 
     # Use structured output
-    structured_llm = llm.with_structured_output(SummaryResult, method="json_mode")
+    structured_llm = llm.with_structured_output(SummaryOutput, method="json_mode")
 
     # Create a prompt
-    prompt  =  get_summary_prompt.format(
+    prompt = get_summary_prompt.format(
         claim=state.get("claim", ""),
         claim_source=state.get("claim_source", ""),
-        source_description=state.get("source_description", ""),
-        subject=state.get("subject", ""),
-        quantitative=state.get("quantitative", ""),
-        precision=state.get("precision", ""),
-        based_on=state.get("based_on", ""),
-        geography=state.get("geography", ""),
-        time_period=state.get("time_period", ""),
+        source_description=details.source_description if details else "",
+        subject=details.subject if details else "",
+        quantitative=details.data_type if details else "",
+        precision=details.precision if details else "",
+        based_on=details.based_on if details else "",
+        geography=details.geography if details else "",
+        time_period=details.time_period if details else "",
         additional_context=state.get("additional_context", ""),
-        page_content = page_content,
+        page_content=page_content,
         alerts=alerts_str,
         messages=messages_str,
     )
@@ -496,13 +491,11 @@ async def produce_summary(state: AgentStateClaim):
             "summary": "",
             "question": "What’s the main point of the claim, and what detail should we verify first?",
             "messages": [AIMessage(content=fallback_text)],
-            "subject": state.get("subject", "") or "Unknown",
             "alerts": (alerts or []) + ["Summary generation failed"],
         }
     
     # human-readable assistant message for the chat
     chat_lines = [
-        f"**Subject:{result.subject}**\\n\n",
         f"{result.summary}\n\n"
     ]
 
@@ -519,7 +512,6 @@ async def produce_summary(state: AgentStateClaim):
         "summary": result.summary,
         "question": result.question,
         "messages": [AIMessage(content=chat_text)],
-        "subject": result.subject,
         "alerts": result.alerts or [],
      }      
 
@@ -535,7 +527,7 @@ async def get_confirmation(state: AgentStateClaim) -> Command[Literal["produce_s
     user_answer = interrupt(state.get("question", "Is the information correct?"))
 
     # Use structured output
-    structured_llm = llm.with_structured_output(ConfirmationResult, method="json_mode")
+    structured_llm = llm.with_structured_output(ConfirmationOutput, method="json_mode")
 
     # Create a prompt
     prompt  =  confirmation_prompt.format(
@@ -611,7 +603,6 @@ async def get_rag_queries(state: AgentStateClaim):
     # Create a prompt
     prompt  = rag_queries_prompt.format(
         summary=state.get("summary", ""),
-        subject=state.get("subject", ""),
         messages=messages_str,
     )
 
@@ -758,14 +749,15 @@ async def rag_retrieve_worker(state: AgentStateClaim) -> Dict[str, Any]:
     q = state["current_query"]
 
     # Pass the subject as a safety net
-    subj = state.get("subject", "")
+    details = state.get("details_claim")
+    subject=details.subject if details else ""
 
     # Call the retriever tool
     retriever_tool = tools_dict["retriever_tool"] 
     
     try:
         #invoke the LLM and store the output
-        out = await retriever_tool.ainvoke({"query": q, "subject": subj})  
+        out = await retriever_tool.ainvoke({"query": q, "subject": subject})  
     
     except Exception as first_error:
         # fallback: try once more
@@ -773,7 +765,7 @@ async def rag_retrieve_worker(state: AgentStateClaim) -> Dict[str, Any]:
 
         try:
             #invoke the LLM and store the output
-            out = await retriever_tool.ainvoke({"query": q, "subject": subj})
+            out = await retriever_tool.ainvoke({"query": q, "subject": subject})
 
         except Exception as second_error:
             # fallback: just continue
@@ -782,7 +774,7 @@ async def rag_retrieve_worker(state: AgentStateClaim) -> Dict[str, Any]:
             return {
                 "rag_trace": [{
                     "tool_name": "retriever_tool",
-                    "args": {"query": q, "subject": subj},
+                    "args": {"query": q, "subject": subject},
                     "error": str(second_error),
                 }],
                 "messages": [
@@ -799,7 +791,7 @@ async def rag_retrieve_worker(state: AgentStateClaim) -> Dict[str, Any]:
     return {
         "rag_trace": [{
             "tool_name": "retriever_tool",
-            "args": {"query": q, "subject": subj},
+            "args": {"query": q, "subject": subject},
             "output": out,
         }]
     }
@@ -825,7 +817,6 @@ async def reduce_claim_matching(state: AgentStateClaim) -> Command[Literal["matc
     # Create a prompt
     prompt = structure_claim_prompt.format(
         summary=state.get("summary", ""),
-        subject=state.get("subject", ""),
         rag_trace=formatted_trace, 
     )
 
@@ -978,7 +969,7 @@ async def primary_source(state: AgentStateClaim) -> Command[Literal["get_search_
     user_answer = interrupt(ask_msg)
 
     # Use structured output
-    structured_llm = llm.with_structured_output(SourceExtraction, method="json_mode")
+    structured_llm = llm.with_structured_output(SourceOutput, method="json_mode")
     
     # Create a prompt
     prompt= source_prompt.format(
@@ -1383,7 +1374,7 @@ async def select_primary_source(state: AgentStateClaim):
     conversation_history = list(state.get("messages", []))
 
     # Use structured output 
-    structured_llm = llm.with_structured_output(PrimarySourceSelection, method="json_mode")
+    structured_llm = llm.with_structured_output(SourceOutput, method="json_mode")
 
     # Add the last message into a string for the prompt
     recent_messages = conversation_history[-MAX_HISTORY_MESSAGES:]  # tune this number
@@ -1470,7 +1461,7 @@ async def get_search_queries(state: AgentStateClaim):
         summary = state.get("summary", ""),
         claim = state.get("claim", ""),
         claim_source=state.get("claim_source", ""),
-        claim_description = state.get("claim_description", "")
+        #claim_description = state.get("claim_description", "")
     )
 
     try:
@@ -1535,7 +1526,7 @@ async def iterate_search(state: AgentStateClaim) -> Command[Literal["get_search_
     conversation_history = list(state.get("messages", []))
 
     # Use structured output 
-    structured_llm = llm.with_structured_output(ConfirmationResult, method="json_mode")
+    structured_llm = llm.with_structured_output(ConfirmationOutput, method="json_mode")
 
     # Add the last message into a string for the prompt
     recent_messages = conversation_history[-MAX_HISTORY_MESSAGES:]  # tune this number

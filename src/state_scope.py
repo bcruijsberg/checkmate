@@ -8,66 +8,37 @@ from pydantic import BaseModel, Field
 from operator import add as add_messages
 from langgraph.graph.message import MessagesState
 
-#initial state for claim checking
-class AgentStateClaim(MessagesState):
-    messages: Annotated[List[BaseMessage], add_messages]
-    messages_critical: Annotated[List[BaseMessage], add_messages]
-    claim: str 
-    checkable: Optional[bool]
-    additional_context: Optional[str]
-    subject: Optional[str]
-    quantitative: Optional[str]
-    precision: Optional[str]
-    based_on: Optional[str]
-    geography: Optional[str]
-    time_period: Optional[str]
-    queries_confirmed: bool
-    question: Optional[str]
-    alerts: List[str] = Field(default_factory=list)
-    summary: Optional[str]
-    explanation: Optional[str]
-    tool_trace: Optional[str]
-    rag_trace: Annotated[List[Dict[str, Any]], operator.add]
-    claim_matching_result: Optional[str]
-    search_queries:  List[str] = Field(default_factory=list)
-    tavily_context: Annotated[List[Dict[str, Any]], operator.add]
-    current_query: str
-    research_focus: Optional[str]
-    claim_url: Optional[str]
-    claim_source: Optional[str]
-    primary_source: Optional[bool]
-    match: Optional[bool]
-    critical_question: Optional[str]
-    reasoning_summary: Optional[str]
-
 #output models for structured output
 
 # Structured output models for the first nodes, gathering all needed info about the claim
-class SubjectResult(BaseModel):
+class CheckableOutput(BaseModel):
     checkable: Literal["POTENTIALLY CHECKABLE", "UNCHECKABLE"]
     explanation: str = Field("", description="Explanation for the classification")
     question: str = Field("", description="Question to user for confirmation")
 
-class MoreInfoResult(BaseModel):
+class DetailsClaim(BaseModel):
     subject: str = Field("", description="The subject of the claim")
-    quantitative: str = Field("", description="Is the claim quantitative?")
+    data_type: str = Field("", description="Is the claim quantitative or qualitative?")
     precision: str = Field("", description="How precise is it?")
     based_on: str = Field("", description="how was the data collected or derived?")
+    geography: str = Field("", description="Geographic scope of the claim")
+    time_period: str = Field("", description="Time frame relevant to the claim")
+    source_description: str = Field(description="Contextual description of where it was found.")
+
+class MoreInfoOutput(BaseModel):
+    details_claim: DetailsClaim
     question: str = Field("", description="Question to user for clarification if needed")
     alerts: List[str] = Field([], description="Any alerts or warnings about the claim")
     claim_source: str = Field(description="The entity who made the claim.")
     primary_source: bool = Field(description="True if this is the original/foundational source.")
-    source_description: str = Field(description="Contextual description of where it was found.")
-    geography: str = Field("", description="Geographic scope of the claim")
-    time_period: str = Field("", description="Time frame relevant to the claim")
 
-class SummaryResult(BaseModel):
+class SummaryOutput(BaseModel):
     summary: str = Field("", description="A concise summary of the claim")
     question: str = Field("", description="Question to user for verification")
     subject: str = Field("", description="The subject of the claim")
     alerts: List[str] = Field([], description="Any alerts or warnings about the claim")
 
-class ConfirmationResult(BaseModel):
+class ConfirmationOutput(BaseModel):
     confirmed: bool = Field(False, description="Whether the user confirmed the claim as checkable")
 
 # Structured output models for the claim matching node
@@ -92,20 +63,9 @@ class ClaimMatchingOutput(BaseModel):
     explanation: str = Field(default="", description="Summary of findings")
 
 # Structured output models for primary source identification nodes
-class SourceExtraction(BaseModel):
+class SourceOutput(BaseModel):
     claim_source: str = Field(description="The entity who made the claim.")
     primary_source: bool = Field(description="True if this is the original/foundational source.")
-
-class SourceExtraction2(BaseModel):
-    claim_source: str = Field(description="The entity who made the claim.")
-    primary_source: bool = Field(description="True if this is the original/foundational source.")
-    claim_url: str = Field(description="Direct URL if provided, else empty string.")
-    source_description: str = Field(description="Contextual description of where it was found.")
-    question: str = Field("", description="Question to user for verification")
-    subject: str = Field("", description="The subject of the claim")
-    quantitative: str = Field("", description="Is the claim quantitative?")
-    precision: str = Field("", description="How precise is it?")
-    based_on: str = Field("", description="how was the data collected or derived?")
 
 # Structured output model for search nodes (primary source and final research)
 class SearchResult(BaseModel):
@@ -124,6 +84,30 @@ class SearchSynthesis(BaseModel):
     missing_info: List[str] = Field(description="Specific facets of the claim still unsupported by the results.")
     coverage_score: int = Field(description="Score from 1-10 on how well the search results cover the subject.")
 
-class PrimarySourceSelection(BaseModel):
-    primary_source: bool = Field(..., description="True if a credible/original source was found among the Tavily results.")
-    claim_source: str = Field("", description="The best/most likely primary source (URL or title).")
+
+#initial state for claim checking
+class AgentStateClaim(MessagesState):
+    messages: Annotated[List[BaseMessage], add_messages]
+    messages_critical: Annotated[List[BaseMessage], add_messages]
+    claim: str 
+    checkable: Optional[bool]
+    additional_context: Optional[str]
+    details_claim: DetailsClaim
+    queries_confirmed: bool
+    question: Optional[str]
+    alerts: List[str] = Field(default_factory=list)
+    summary: Optional[str]
+    explanation: Optional[str]
+    tool_trace: Optional[str]
+    rag_trace: Annotated[List[Dict[str, Any]], operator.add]
+    claim_matching_result: Optional[str]
+    search_queries:  List[str] = Field(default_factory=list)
+    tavily_context: Annotated[List[Dict[str, Any]], operator.add]
+    current_query: str
+    research_focus: Optional[str]
+    claim_url: Optional[str]
+    claim_source: Optional[str]
+    primary_source: Optional[bool]
+    match: Optional[bool]
+    critical_question: Optional[str]
+    reasoning_summary: Optional[str]
