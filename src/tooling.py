@@ -14,7 +14,7 @@ load_dotenv(".env", override=True)
 
 #  Load the LLM
 llm_tuned = ChatOllama(model="mistral7b-q4km:latest", temperature=0.5, base_url="http://localhost:11434")
-llm = ChatGroq(model_name="qwen/qwen3-32b", temperature=0.1)
+llm = ChatGroq(model_name="llama-3.3-70b-versatile", temperature=0.1)
 #qwen3:1.7b was also tested, but did not provide explanation in the retrieve information node
 #llm = ChatOllama(model="qwen3:4b", temperature=0.3, base_url="http://localhost:11434")
 # Load Tavily
